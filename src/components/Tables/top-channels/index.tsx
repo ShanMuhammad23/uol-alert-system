@@ -8,13 +8,23 @@ import {
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import { getStudentsByAlert, getFullData } from "@/app/(home)/fetch";
-import type { AppUser, Student, Department, Course } from "@/app/(home)/fetch";
+import type {
+  AppUser,
+  Student,
+  Department,
+  Course,
+  MasterFilterParams,
+  AlertDimensionFilter,
+} from "@/app/(home)/fetch";
 import Link from "next/link";
 
 type PropsType = {
   className?: string;
   selectedAlert?: string;
   user?: AppUser | null;
+  masterFilter?: MasterFilterParams;
+  gpaFilter?: AlertDimensionFilter;
+  attendanceFilter?: AlertDimensionFilter;
 };
 
 // Helper function to extract program prefix from course ID (e.g., "CS101" -> "CS")
@@ -74,15 +84,57 @@ function groupStudentsForHod(
   return result;
 }
 
+const UNASSIGNED_INSTRUCTOR_ID = "__UNASSIGNED__";
+
+// Group students by program -> instructor -> course (for HoD view)
+function groupStudentsForHodInstructors(
+  students: Student[],
+  teachers: AppUser[],
+  hodDepartmentIds: string[]
+): Record<string, Record<string, Record<string, Student[]>>> {
+  const result: Record<string, Record<string, Record<string, Student[]>>> = {};
+  const teachersInDept = teachers.filter(
+    (t) => t.role === "teacher" && t.department_id && hodDepartmentIds.includes(t.department_id)
+  );
+  const courseToInstructor = new Map<string, AppUser>();
+  for (const t of teachersInDept) {
+    if (t.course_ids) {
+      for (const cid of t.course_ids) {
+        courseToInstructor.set(cid, t);
+      }
+    }
+  }
+
+  for (const student of students) {
+    const courseId = student.course_id;
+    const programId = getProgramFromCourse(courseId);
+    const instructor = courseToInstructor.get(courseId);
+    const instructorId = instructor?.id ?? UNASSIGNED_INSTRUCTOR_ID;
+
+    if (!result[programId]) result[programId] = {};
+    if (!result[programId][instructorId]) result[programId][instructorId] = {};
+    if (!result[programId][instructorId][courseId]) result[programId][instructorId][courseId] = [];
+    result[programId][instructorId][courseId].push(student);
+  }
+
+  return result;
+}
+
 export async function TopChannels({
   className,
   selectedAlert = "all",
   user,
+  masterFilter,
+  gpaFilter,
+  attendanceFilter,
 }: PropsType) {
   const { students } = await getStudentsByAlert(
     selectedAlert,
     { page: 1, pageSize: 100000 },
     user,
+    masterFilter,
+    gpaFilter,
+    attendanceFilter,
   );
 
   // For deans, show nested structure: Department -> Program -> Course -> Students
@@ -102,9 +154,7 @@ export async function TopChannels({
           className,
         )}
       >
-        <h2 className="mb-4 text-body-2xlg font-bold text-dark dark:text-white">
-          Students by alert
-        </h2>
+       
         {students.length === 0 ? (
           <div className="mt-6 rounded-md border border-dashed border-stroke py-8 text-center text-dark-6 dark:border-dark-3">
             No students match this filter.
@@ -418,13 +468,24 @@ export async function TopChannels({
     );
   }
 
-  // For HoD, show nested structure: Program -> Course -> Students
+  // For HoD, show nested structure: Program -> Instructors -> Courses -> Students
   if (user?.role === "hod") {
     const data = await getFullData();
-    const grouped = groupStudentsForHod(students);
+    const hodDepartmentIds = user.department_ids ?? [];
+    const grouped = groupStudentsForHodInstructors(
+      students,
+      data.users,
+      hodDepartmentIds,
+    );
     const programEntries = Object.entries(grouped).sort(([a], [b]) =>
       a.localeCompare(b),
     );
+
+    const getInstructorName = (instructorId: string) => {
+      if (instructorId === UNASSIGNED_INSTRUCTOR_ID) return "Unassigned";
+      const u = data.users.find((x) => x.id === instructorId);
+      return u?.name ?? instructorId;
+    };
 
     return (
       <div
@@ -442,11 +503,14 @@ export async function TopChannels({
           </div>
         ) : (
           <div className="mt-4 space-y-4">
-            {programEntries.map(([programId, programCourses]) => {
-              const courseEntries = Object.entries(programCourses).sort(
-                ([a], [b]) => a.localeCompare(b),
+            {programEntries.map(([programId, programInstructors]) => {
+              const instructorEntries = Object.entries(programInstructors).sort(
+                ([aId], [bId]) =>
+                  getInstructorName(aId).localeCompare(getInstructorName(bId)),
               );
-              const programStudents = Object.values(programCourses).flat();
+              const programStudents = Object.values(programInstructors).flatMap(
+                (courses) => Object.values(courses).flat(),
+              );
               const programGpaAlerts = programStudents.filter(
                 (s) => s.gpa.alert_level !== null,
               ).length;
@@ -492,63 +556,50 @@ export async function TopChannels({
                   </summary>
                   <div className="border-t border-stroke bg-white px-4 py-3 dark:border-dark-3 dark:bg-gray-dark">
                     <div className="space-y-3">
-                      {courseEntries.map(([courseId, courseStudents]) => {
-                        const course = data.courses.find((c) => c.id === courseId);
-                        const classesHeld =
-                          courseStudents[0]?.attendance.total_classes_held ?? 0;
-                        const averageAttendance =
-                          courseStudents.reduce(
-                            (sum, s) => sum + s.attendance.attendance_percentage,
-                            0,
-                          ) / courseStudents.length;
-                        const gpaAlerts = courseStudents.filter(
+                      {instructorEntries.map(([instructorId, instructorCourses]) => {
+                        const courseEntries = Object.entries(instructorCourses).sort(
+                          ([a], [b]) => a.localeCompare(b),
+                        );
+                        const instructorStudents = Object.values(
+                          instructorCourses,
+                        ).flat();
+                        const instructorGpaAlerts = instructorStudents.filter(
                           (s) => s.gpa.alert_level !== null,
                         ).length;
-                        const attendanceAlerts = courseStudents.filter(
+                        const instructorAttendanceAlerts = instructorStudents.filter(
                           (s) => s.attendance.alert_level !== null,
                         ).length;
 
                         return (
                           <details
-                            key={courseId}
+                            key={instructorId}
                             className="group rounded-md border border-stroke bg-gray-50 dark:border-dark-3 dark:bg-dark-2"
                           >
                             <summary className="flex cursor-pointer items-center justify-between gap-4 px-4 py-3">
                               <div className="flex flex-col gap-1">
                                 <span className="text-sm font-semibold text-dark dark:text-white">
-                                  Course:{" "}
+                                
                                   <span className="font-bold text-primary">
-                                    {courseId}
+                                    {getInstructorName(instructorId)}
                                   </span>
-                                  {course && (
-                                    <span className="ml-2 text-xs text-dark-6 dark:text-dark-5">
-                                      ({course.name})
-                                    </span>
-                                  )}
                                 </span>
                                 <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-dark-6 dark:text-dark-5">
                                   <span>
-                                    Classes held:{" "}
+                                    Students:{" "}
                                     <span className="font-semibold text-dark dark:text-white">
-                                      {classesHeld}
-                                    </span>
-                                  </span>
-                                  <span>
-                                    Average attendance:{" "}
-                                    <span className="font-semibold text-dark dark:text-white">
-                                      {averageAttendance.toFixed(1)}%
+                                      {instructorStudents.length}
                                     </span>
                                   </span>
                                   <span>
                                     GPA alerts:{" "}
                                     <span className="font-semibold text-red">
-                                      {gpaAlerts}
+                                      {instructorGpaAlerts}
                                     </span>
                                   </span>
                                   <span>
                                     Attendance alerts:{" "}
                                     <span className="font-semibold text-amber-600 dark:text-amber-400">
-                                      {attendanceAlerts}
+                                      {instructorAttendanceAlerts}
                                     </span>
                                   </span>
                                 </div>
@@ -557,124 +608,200 @@ export async function TopChannels({
                                 ▼
                               </span>
                             </summary>
-                            <div className="border-t border-stroke bg-white px-2 py-3 dark:border-dark-3 dark:bg-gray-dark">
-                              <Table>
-                                <TableHeader>
-                                  <TableRow className="border-none uppercase [&>th]:text-center">
-                                    <TableHead className="min-w-[140px] !text-left">
-                                      Name
-                                    </TableHead>
-                                    <TableHead className="min-w-[100px] !text-left">
-                                      SAP ID
-                                    </TableHead>
-                                    <TableHead className="min-w-[80px] !text-left">
-                                      Course
-                                    </TableHead>
-                                    <TableHead className="text-center">GPA</TableHead>
-                                    <TableHead className="text-center">Present</TableHead>
-                                    <TableHead className="text-center">Absent</TableHead>
-                                    <TableHead className="text-center">
-                                      Attendance %
-                                    </TableHead>
-                                    <TableHead className="min-w-[80px] !text-left">
-                                      Actions
-                                    </TableHead>
-                                  </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                  {courseStudents.map((student) => {
-                                    const trendSymbol =
-                                      student.gpa.trend === "up"
-                                        ? "↗"
-                                        : student.gpa.trend === "down"
-                                          ? "↘"
-                                          : "→";
-                                    const absent =
-                                      student.attendance.total_classes_held -
-                                      student.attendance.classes_attended;
-                                    const gpaColor =
-                                      student.gpa.alert_level === "critical"
-                                        ? "text-red font-semibold"
-                                        : student.gpa.alert_level === "warning"
-                                          ? "text-amber-600 dark:text-amber-400 font-semibold"
-                                          : "text-dark dark:text-white";
-                                    const attColor =
-                                      student.attendance.alert_level === "critical"
-                                        ? "text-red font-semibold"
-                                        : student.attendance.alert_level === "warning"
-                                          ? "text-amber-600 dark:text-amber-400 font-semibold"
-                                          : "text-dark dark:text-white";
+                            <div className="border-t border-stroke bg-white px-4 py-3 dark:border-dark-3 dark:bg-gray-dark">
+                              <div className="space-y-3">
+                                {courseEntries.map(([courseId, courseStudents]) => {
+                                  const course = data.courses.find(
+                                    (c) => c.id === courseId,
+                                  );
+                                  const classesHeld =
+                                    courseStudents[0]?.attendance.total_classes_held ??
+                                    0;
+                                  const averageAttendance =
+                                    courseStudents.reduce(
+                                      (sum, s) =>
+                                        sum + s.attendance.attendance_percentage,
+                                      0,
+                                    ) / courseStudents.length;
+                                  const gpaAlerts = courseStudents.filter(
+                                    (s) => s.gpa.alert_level !== null,
+                                  ).length;
+                                  const attendanceAlerts = courseStudents.filter(
+                                    (s) => s.attendance.alert_level !== null,
+                                  ).length;
 
-                                    return (
-                                      <TableRow
-                                        className="text-center text-base font-medium text-dark dark:text-white"
-                                        key={student.sap_id}
-                                      >
-                                        <TableCell className="!text-left font-medium">
-                                          {student.name}
-                                        </TableCell>
-                                        <TableCell className="!text-left text-dark-6">
-                                          {student.sap_id}
-                                        </TableCell>
-                                        <TableCell className="!text-left">
-                                          {student.course_id}
-                                        </TableCell>
-                                        <TableCell className={cn(gpaColor)}>
-                                          {student.gpa.current}
-                                          <span
-                                            className="ml-1 text-dark-6"
-                                            title={student.gpa.trend}
-                                          >
-                                            {trendSymbol}
-                                          </span>
-                                          {student.gpa.change !== 0 && (
-                                            <span
-                                              className={cn(
-                                                "ml-1 text-xs",
-                                                student.gpa.change < 0
-                                                  ? "text-red"
-                                                  : "text-green",
-                                              )}
-                                            >
-                                              ({student.gpa.change > 0 ? "+" : ""}
-                                              {student.gpa.change})
+                                  return (
+                                    <details
+                                      key={courseId}
+                                      className="group rounded-md border border-stroke bg-gray-50 dark:border-dark-3 dark:bg-dark-2"
+                                    >
+                                      <summary className="flex cursor-pointer items-center justify-between gap-4 px-4 py-3">
+                                        <div className="flex flex-col gap-1">
+                                          <span className="text-sm font-semibold text-dark dark:text-white">
+                                            Course:{" "}
+                                            <span className="font-bold text-primary">
+                                              {courseId}
                                             </span>
-                                          )}
-                                        </TableCell>
-                                        <TableCell>
-                                          {student.attendance.classes_attended}
-                                        </TableCell>
-                                        <TableCell>{absent}</TableCell>
-                                        <TableCell className={cn(attColor)}>
-                                          {student.attendance.attendance_percentage.toFixed(
-                                            1,
-                                          )}
-                                          %
-                                        </TableCell>
-                                        <TableCell>
-                                          <Link href={`/students/${student.sap_id}`}>
-                                            <svg
-                                              xmlns="http://www.w3.org/2000/svg"
-                                              width="24"
-                                              height="24"
-                                              viewBox="0 0 24 24"
-                                              fill="none"
-                                              stroke="currentColor"
-                                              strokeWidth="1"
-                                              strokeLinecap="round"
-                                              strokeLinejoin="round"
-                                              className="lucide lucide-eye-icon lucide-eye"
-                                            >
-                                              <path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0" />
-                                              <circle cx="12" cy="12" r="3" />
-                                            </svg>
-                                          </Link>
-                                        </TableCell>
-                                      </TableRow>
-                                    );
-                                  })}
-                                </TableBody>
-                              </Table>
+                                            {course && (
+                                              <span className="ml-2 text-xs text-dark-6 dark:text-dark-5">
+                                                ({course.name})
+                                              </span>
+                                            )}
+                                          </span>
+                                          <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-dark-6 dark:text-dark-5">
+                                            <span>
+                                              Classes held:{" "}
+                                              <span className="font-semibold text-dark dark:text-white">
+                                                {classesHeld}
+                                              </span>
+                                            </span>
+                                            <span>
+                                              Average attendance:{" "}
+                                              <span className="font-semibold text-dark dark:text-white">
+                                                {averageAttendance.toFixed(1)}%
+                                              </span>
+                                            </span>
+                                            <span>
+                                              GPA alerts:{" "}
+                                              <span className="font-semibold text-red">
+                                                {gpaAlerts}
+                                              </span>
+                                            </span>
+                                            <span>
+                                              Attendance alerts:{" "}
+                                              <span className="font-semibold text-amber-600 dark:text-amber-400">
+                                                {attendanceAlerts}
+                                              </span>
+                                            </span>
+                                          </div>
+                                        </div>
+                                        <span className="ml-auto text-xs text-dark-6 transition-transform group-open:rotate-180 dark:text-dark-5">
+                                          ▼
+                                        </span>
+                                      </summary>
+                                      <div className="border-t border-stroke bg-white px-2 py-3 dark:border-dark-3 dark:bg-gray-dark">
+                                        <Table>
+                                          <TableHeader>
+                                            <TableRow className="border-none uppercase [&>th]:text-center">
+                                              <TableHead className="min-w-[140px] !text-left">
+                                                Name
+                                              </TableHead>
+                                              <TableHead className="min-w-[100px] !text-left">
+                                                SAP ID
+                                              </TableHead>
+                                              <TableHead className="min-w-[80px] !text-left">
+                                                Course
+                                              </TableHead>
+                                              <TableHead className="text-center">GPA</TableHead>
+                                              <TableHead className="text-center">Present</TableHead>
+                                              <TableHead className="text-center">Absent</TableHead>
+                                              <TableHead className="text-center">
+                                                Attendance %
+                                              </TableHead>
+                                              <TableHead className="min-w-[80px] !text-left">
+                                                Actions
+                                              </TableHead>
+                                            </TableRow>
+                                          </TableHeader>
+                                          <TableBody>
+                                            {courseStudents.map((student) => {
+                                              const trendSymbol =
+                                                student.gpa.trend === "up"
+                                                  ? "↗"
+                                                  : student.gpa.trend === "down"
+                                                    ? "↘"
+                                                    : "→";
+                                              const absent =
+                                                student.attendance.total_classes_held -
+                                                student.attendance.classes_attended;
+                                              const gpaColor =
+                                                student.gpa.alert_level === "critical"
+                                                  ? "text-red font-semibold"
+                                                  : student.gpa.alert_level === "warning"
+                                                    ? "text-amber-600 dark:text-amber-400 font-semibold"
+                                                    : "text-dark dark:text-white";
+                                              const attColor =
+                                                student.attendance.alert_level === "critical"
+                                                  ? "text-red font-semibold"
+                                                  : student.attendance.alert_level === "warning"
+                                                    ? "text-amber-600 dark:text-amber-400 font-semibold"
+                                                    : "text-dark dark:text-white";
+
+                                              return (
+                                                <TableRow
+                                                  className="text-center text-base font-medium text-dark dark:text-white"
+                                                  key={student.sap_id}
+                                                >
+                                                  <TableCell className="!text-left font-medium">
+                                                    {student.name}
+                                                  </TableCell>
+                                                  <TableCell className="!text-left text-dark-6">
+                                                    {student.sap_id}
+                                                  </TableCell>
+                                                  <TableCell className="!text-left">
+                                                    {student.course_id}
+                                                  </TableCell>
+                                                  <TableCell className={cn(gpaColor)}>
+                                                    {student.gpa.current}
+                                                    <span
+                                                      className="ml-1 text-dark-6"
+                                                      title={student.gpa.trend}
+                                                    >
+                                                      {trendSymbol}
+                                                    </span>
+                                                    {student.gpa.change !== 0 && (
+                                                      <span
+                                                        className={cn(
+                                                          "ml-1 text-xs",
+                                                          student.gpa.change < 0
+                                                            ? "text-red"
+                                                            : "text-green",
+                                                        )}
+                                                      >
+                                                        ({student.gpa.change > 0 ? "+" : ""}
+                                                        {student.gpa.change})
+                                                      </span>
+                                                    )}
+                                                  </TableCell>
+                                                  <TableCell>
+                                                    {student.attendance.classes_attended}
+                                                  </TableCell>
+                                                  <TableCell>{absent}</TableCell>
+                                                  <TableCell className={cn(attColor)}>
+                                                    {student.attendance.attendance_percentage.toFixed(
+                                                      1,
+                                                    )}
+                                                    %
+                                                  </TableCell>
+                                                  <TableCell>
+                                                    <Link href={`/students/${student.sap_id}`}>
+                                                      <svg
+                                                        xmlns="http://www.w3.org/2000/svg"
+                                                        width="24"
+                                                        height="24"
+                                                        viewBox="0 0 24 24"
+                                                        fill="none"
+                                                        stroke="currentColor"
+                                                        strokeWidth="1"
+                                                        strokeLinecap="round"
+                                                        strokeLinejoin="round"
+                                                        className="lucide lucide-eye-icon lucide-eye"
+                                                      >
+                                                        <path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0" />
+                                                        <circle cx="12" cy="12" r="3" />
+                                                      </svg>
+                                                    </Link>
+                                                  </TableCell>
+                                                </TableRow>
+                                              );
+                                            })}
+                                          </TableBody>
+                                        </Table>
+                                      </div>
+                                    </details>
+                                  );
+                                })}
+                              </div>
                             </div>
                           </details>
                         );

@@ -1,18 +1,27 @@
 import { DonutChart } from "@/components/Charts/used-devices/chart";
 import { cn } from "@/lib/utils";
 import { getOverviewData } from "../../fetch";
-import type { AppUser } from "../../fetch";
+import type { AppUser, MasterFilterParams, AlertDimensionFilter } from "../../fetch";
 
 type PropsType = {
   className?: string;
   user?: AppUser | null;
+  masterFilter?: MasterFilterParams;
+  gpaFilter?: AlertDimensionFilter;
+  attendanceFilter?: AlertDimensionFilter;
 };
 
 const CHART_COLORS = ["#DC2626", "#22C55E"];
 
-export async function AttendanceChart({ className, user }: PropsType) {
+export async function AttendanceChart({
+  className,
+  user,
+  masterFilter,
+  gpaFilter,
+  attendanceFilter,
+}: PropsType) {
   const { totalStudents, yellowAttendance, redAttendance } =
-    await getOverviewData(user);
+    await getOverviewData(user, masterFilter, gpaFilter, attendanceFilter);
 
   const withAlerts = yellowAttendance.value + redAttendance.value;
   const noAlert = totalStudents - withAlerts;
@@ -32,15 +41,16 @@ export async function AttendanceChart({ className, user }: PropsType) {
       )}
     >
       <h2 className="text-lg text-center font-bold text-dark dark:text-white">
-        Attendance % Alert
+        Attendance Alert
       </h2>
 
-      <div className="flex w-full justify-center">
+      <div className="flex w-full items-center justify-center">
         <DonutChart
           data={data}
           colors={CHART_COLORS}
           centerLabel=""
-          centerValue={`${alertsPercentage}%`}
+          centerValue={`${alertsPercentage.toFixed(1)}%`}
+          size="sm"
         />
       </div>
     </div>

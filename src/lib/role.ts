@@ -13,9 +13,10 @@ export type User = {
 };
 
 export function getStudentsForRole(
-  user: User,
+  user: User | null | undefined,
   allStudents: { department_id: string; course_id: string; faculty_id?: string }[]
 ): typeof allStudents {
+  if (user == null) return allStudents;
   switch (user.role) {
     case "dean":
       if (!user.faculty_id) return allStudents;
@@ -31,10 +32,11 @@ export function getStudentsForRole(
   }
 }
 
-export function getCoursesForRole(
-  user: User,
-  allCourses: { id: string; department_id: string }[]
-): typeof allCourses {
+export function getCoursesForRole<T extends { id: string; department_id: string }>(
+  user: User | null | undefined,
+  allCourses: T[]
+): T[] {
+  if (user == null) return allCourses;
   switch (user.role) {
     case "dean":
       return allCourses;
@@ -49,10 +51,11 @@ export function getCoursesForRole(
   }
 }
 
-export function getDepartmentsForRole(
-  user: User,
-  allDepartments: { id: string; faculty_id?: string }[]
-): typeof allDepartments {
+export function getDepartmentsForRole<T extends { id: string; faculty_id?: string }>(
+  user: User | null | undefined,
+  allDepartments: T[]
+): T[] {
+  if (user == null) return allDepartments;
   switch (user.role) {
     case "dean":
       if (!user.faculty_id) return allDepartments;

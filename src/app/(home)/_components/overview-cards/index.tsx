@@ -1,5 +1,5 @@
 import { getOverviewData } from "../../fetch";
-import type { AppUser } from "../../fetch";
+import type { AppUser, MasterFilterParams, AlertDimensionFilter } from "../../fetch";
 import { OverviewCard } from "./card";
 import * as icons from "./icons";
 import Link from "next/link";
@@ -8,11 +8,20 @@ import type { AlertFilter } from "../../fetch";
 type PropsType = {
   selectedAlert: AlertFilter | string;
   user?: AppUser | null;
+  masterFilter?: MasterFilterParams;
+  gpaFilter?: AlertDimensionFilter;
+  attendanceFilter?: AlertDimensionFilter;
 };
 
-export async function OverviewCardsGroup({ selectedAlert, user }: PropsType) {
+export async function OverviewCardsGroup({
+  selectedAlert,
+  user,
+  masterFilter,
+  gpaFilter,
+  attendanceFilter,
+}: PropsType) {
   const { yellowGpa, redGpa, yellowAttendance, redAttendance } =
-    await getOverviewData(user);
+    await getOverviewData(user, masterFilter, gpaFilter, attendanceFilter);
 
   const active = selectedAlert || "all";
 

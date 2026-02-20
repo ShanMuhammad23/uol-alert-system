@@ -11,7 +11,6 @@ import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
 import { LogOutIcon, SettingsIcon, UserIcon } from "./icons";
-import logo from "@/assets/logos/logo-black.png";
 import { signOut } from "@/app/auth/actions";
 import type { AppUser } from "@/app/(home)/fetch";
 type UserInfoProps = {
@@ -23,7 +22,7 @@ export function UserInfo({ user }: UserInfoProps) {
 
   const displayName = user?.name ?? "Guest";
   const displayEmail = user?.email ?? "";
-  const img = logo;
+  const img = '/images/user/user-03.png';
   const isSignedIn = !!user;
 
   return (
@@ -33,7 +32,7 @@ export function UserInfo({ user }: UserInfoProps) {
 
         <figure className="flex items-center gap-3">
           <Image
-            src={img}
+            src='/images/user/user-03.png'
             className="size-12"
             alt={`Avatar of ${displayName}`}
             role="presentation"
@@ -63,7 +62,7 @@ export function UserInfo({ user }: UserInfoProps) {
 
         <figure className="flex items-center gap-2.5 px-5 py-3.5">
           <Image
-            src={img}
+            src='/images/user/user-03.png'
             className="size-12"
             alt={`Avatar for ${displayName}`}
             role="presentation"

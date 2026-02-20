@@ -1,22 +1,36 @@
 import { DonutChart } from "@/components/Charts/used-devices/chart";
 import { cn } from "@/lib/utils";
 import { getOverviewData } from "../../fetch";
-import type { AppUser } from "../../fetch";
+import type { AppUser, MasterFilterParams, AlertDimensionFilter } from "../../fetch";
 
 type PropsType = {
   className?: string;
   user?: AppUser | null;
+  masterFilter?: MasterFilterParams;
+  gpaFilter?: AlertDimensionFilter;
+  attendanceFilter?: AlertDimensionFilter;
 };
 
 const CHART_COLORS = ["#DC2626", "#22C55E"];
 
-export async function GPAChart({ className, user }: PropsType) {
-  const { totalStudents, yellowGpa, redGpa } = await getOverviewData(user);
+export async function GPAChart({
+  className,
+  user,
+  masterFilter,
+  gpaFilter,
+  attendanceFilter,
+}: PropsType) {
+  const { totalStudents, yellowGpa, redGpa } = await getOverviewData(
+    user,
+    masterFilter,
+    gpaFilter,
+    attendanceFilter,
+  );
 
   const withAlerts = yellowGpa.value + redGpa.value;
   const noAlert = totalStudents - withAlerts;
   const alertsPercentage =
-    totalStudents > 0 ? Math.round((withAlerts / totalStudents) * 100) : 0;
+    totalStudents > 0 ? (withAlerts / totalStudents) * 100 : 0;
 
   const data = [
     { name: "With alert(s)", amount: withAlerts },
@@ -34,12 +48,13 @@ export async function GPAChart({ className, user }: PropsType) {
         GPA Alerts
       </h2>
 
-      <div className="flex w-full justify-center">
+      <div className="flex w-full items-center justify-center">
         <DonutChart
           data={data}
           colors={CHART_COLORS}
           centerLabel=""
-          centerValue={`${alertsPercentage}%`}
+          centerValue={`${alertsPercentage.toFixed(1)}%`}
+          size="sm"
         />
       </div>
     </div>
