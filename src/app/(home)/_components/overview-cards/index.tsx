@@ -9,19 +9,19 @@ type PropsType = {
   selectedAlert: AlertFilter | string;
   user?: AppUser | null;
   masterFilter?: MasterFilterParams;
-  gpaFilter?: AlertDimensionFilter;
-  attendanceFilter?: AlertDimensionFilter;
+  gpaFilters?: AlertDimensionFilter[];
+  attendanceFilters?: AlertDimensionFilter[];
 };
 
 export async function OverviewCardsGroup({
   selectedAlert,
   user,
   masterFilter,
-  gpaFilter,
-  attendanceFilter,
+  gpaFilters,
+  attendanceFilters,
 }: PropsType) {
   const { yellowGpa, redGpa, yellowAttendance, redAttendance } =
-    await getOverviewData(user, masterFilter, gpaFilter, attendanceFilter);
+    await getOverviewData(user, masterFilter, gpaFilters, attendanceFilters);
 
   const active = selectedAlert || "all";
 
@@ -60,6 +60,10 @@ export async function OverviewCardsGroup({
             data={data}
             Icon={Icon}
             isActive={active === filter}
+            user={user}
+            masterFilter={masterFilter}
+            gpaFilters={gpaFilters}
+            attendanceFilters={attendanceFilters}
           />
         </Link>
       ))}

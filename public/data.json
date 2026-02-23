@@ -10,9 +10,9 @@
         "description": "Alert when attendance <= threshold"
       },
       "gpa": {
-        "warning_drop": 1.0,
-        "critical_drop": 0.5,
-        "description": "Alert when GPA drops >= threshold from previous semester"
+        "warning_drop": 0.5,
+        "critical_drop": 1.0,
+        "description": "Yellow when GPA drop >= 0.5; red when GPA drop >= 1.0 from previous semester"
       }
     },
     "alert_variables": {
@@ -30271,7 +30271,7 @@
         "classes_attended": 32,
         "total_classes_held": 50,
         "attendance_percentage": 64.0,
-        "alert_level": null,
+        "alert_level": "warning",
         "class_average_attendance": 73.52,
         "deviation_from_class_avg": -9.52
       },
@@ -30302,11 +30302,11 @@
         "previous": 2.7,
         "change": -0.19,
         "trend": "down",
-        "alert_level": null,
+        "alert_level": "warning",
         "class_average_gpa_current": 2.92,
         "class_average_gpa_previous": 2.84
       },
-      "overall_alert": "none"
+      "overall_alert": "warning"
     },
     {
       "sap_id": "100629",

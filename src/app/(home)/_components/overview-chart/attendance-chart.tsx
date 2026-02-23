@@ -7,8 +7,8 @@ type PropsType = {
   className?: string;
   user?: AppUser | null;
   masterFilter?: MasterFilterParams;
-  gpaFilter?: AlertDimensionFilter;
-  attendanceFilter?: AlertDimensionFilter;
+  gpaFilters?: AlertDimensionFilter[];
+  attendanceFilters?: AlertDimensionFilter[];
 };
 
 const CHART_COLORS = ["#DC2626", "#22C55E"];
@@ -17,11 +17,11 @@ export async function AttendanceChart({
   className,
   user,
   masterFilter,
-  gpaFilter,
-  attendanceFilter,
+  gpaFilters,
+  attendanceFilters,
 }: PropsType) {
   const { totalStudents, yellowAttendance, redAttendance } =
-    await getOverviewData(user, masterFilter, gpaFilter, attendanceFilter);
+    await getOverviewData(user, masterFilter, gpaFilters, attendanceFilters);
 
   const withAlerts = yellowAttendance.value + redAttendance.value;
   const noAlert = totalStudents - withAlerts;
@@ -34,17 +34,11 @@ export async function AttendanceChart({
   ];
 
   return (
-    <div
-      className={cn(
-        "grid grid-cols-1 grid-rows-[auto_1fr]  rounded-[10px]  p-1  ",
-        className,
-      )}
-    >
-      <h2 className="text-lg text-center font-bold text-dark dark:text-white">
-        Attendance Alert
-      </h2>
 
-      <div className="flex w-full items-center justify-center">
+
+    <div className="flex flex-col">
+     
+      <div className="flex w-full items-center justify-center max-h-[200px]">
         <DonutChart
           data={data}
           colors={CHART_COLORS}
@@ -54,5 +48,6 @@ export async function AttendanceChart({
         />
       </div>
     </div>
+
   );
 }

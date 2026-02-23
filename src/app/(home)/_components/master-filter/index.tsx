@@ -1,18 +1,12 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { useState } from "react";
+import { useClickOutside } from "@/hooks/use-click-outside";
 import { cn } from "@/lib/utils";
-import type { MasterFilterOptions, AlertDimensionFilter } from "../../fetch";
-
-export type MasterFilterCurrent = {
-  department_id?: string;
-  program?: string;
-  instructor_id?: string;
-  course_id?: string;
-};
+import type { MasterFilterParams, MasterFilterOptions, AlertDimensionFilter } from "../../fetch";
 
 const GPA_ATTENDANCE_OPTIONS: { value: AlertDimensionFilter; label: string }[] = [
-  { value: "all", label: "All" },
   { value: "red", label: "Red alert" },
   { value: "yellow", label: "Yellow alert" },
   { value: "good", label: "Good standing" },
@@ -20,49 +14,97 @@ const GPA_ATTENDANCE_OPTIONS: { value: AlertDimensionFilter; label: string }[] =
 
 type PropsType = {
   options: MasterFilterOptions;
-  current: MasterFilterCurrent;
+  current: MasterFilterParams;
   role: "dean" | "hod" | "teacher" | undefined;
   selectedAlert: string;
-  gpaFilter: AlertDimensionFilter;
-  attendanceFilter: AlertDimensionFilter;
+  gpaFilters: AlertDimensionFilter[];
+  attendanceFilters: AlertDimensionFilter[];
   className?: string;
 };
 
-function FilterSelect({
+type FilterKey = "department" | "program" | "course" | "instructor" | "attendance" | "gpa";
+
+function FilterMultiSelect({
   label,
-  value,
+  selected,
   items,
   onChange,
+  isOpen,
+  onOpenChange,
   "data-testid": testId,
 }: {
   label: string;
-  value: string;
+  selected: string[];
   items: { value: string; label: string }[];
-  onChange: (value: string) => void;
+  onChange: (values: string[]) => void;
+  isOpen: boolean;
+  onOpenChange: () => void;
   "data-testid"?: string;
 }) {
+  const toggle = (value: string) => {
+    const next = selected.includes(value)
+      ? selected.filter((v) => v !== value)
+      : [...selected, value];
+    onChange(next);
+  };
+
+  const displayLabel =
+    selected.length === 0
+      ? "All"
+      : selected.length <= 2
+        ? selected.map((v) => items.find((i) => i.value === v)?.label ?? v).join(", ")
+        : `${selected.length} selected`;
+
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="flex flex-col gap-1.5 relative" data-testid={testId}>
       <label className="text-body-sm font-medium text-dark dark:text-white">
         {label}
       </label>
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        data-testid={testId}
+      <button
+        type="button"
+        onClick={onOpenChange}
         className={cn(
-          "rounded-lg border border-stroke bg-white px-3 py-2.5 text-sm outline-none transition",
-          "focus:border-primary dark:border-dark-3 dark:bg-gray-dark dark:focus:border-primary",
-          "min-w-[140px]"
+          "rounded-lg border border-stroke bg-white px-3 py-2.5 text-sm text-left outline-none transition flex items-center justify-between gap-2",
+          "focus:border-primary dark:border-dark-3 dark:bg-gray-dark dark:focus:border-primary dark:text-white",
+          "min-w-[140px] max-w-[200px]"
         )}
+        aria-expanded={isOpen}
+        aria-haspopup="listbox"
       >
-        <option value="">All</option>
-        {items.map((item) => (
-          <option key={item.value} value={item.value}>
-            {item.label}
-          </option>
-        ))}
-      </select>
+        <span className="truncate">{displayLabel}</span>
+        <svg
+          className={cn("w-4 h-4 shrink-0 transition", isOpen && "rotate-180")}
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+      {isOpen && (
+        <div
+          role="listbox"
+          className="absolute left-0 top-full z-50 mt-1 max-h-[280px] w-full min-w-[200px] overflow-y-auto rounded-lg border border-stroke bg-white py-1 shadow-lg dark:border-stroke-dark dark:bg-gray-dark"
+        >
+          {items.map((item) => (
+            <label
+              key={item.value}
+              className={cn(
+                "flex items-center gap-2 px-3 py-2 cursor-pointer text-sm hover:bg-gray-2 dark:hover:bg-dark-3",
+                selected.includes(item.value) && "bg-primary/10 dark:bg-primary/20"
+              )}
+            >
+              <input
+                type="checkbox"
+                checked={selected.includes(item.value)}
+                onChange={() => toggle(item.value)}
+                className="rounded border-stroke text-primary focus:ring-primary dark:border-dark-3 dark:bg-gray-dark"
+              />
+              <span className="text-dark dark:text-white">{item.label}</span>
+            </label>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -72,45 +114,58 @@ export function MasterFilter({
   current,
   role,
   selectedAlert,
-  gpaFilter,
-  attendanceFilter,
+  gpaFilters,
+  attendanceFilters,
   className,
 }: PropsType) {
   const router = useRouter();
+  const [openFilter, setOpenFilter] = useState<FilterKey | null>(null);
+  const filterPanelRef = useClickOutside<HTMLDivElement>(() => setOpenFilter(null));
 
-  const buildUrl = (
-    updates: Partial<MasterFilterCurrent> & {
-      gpa_filter?: AlertDimensionFilter;
-      attendance_filter?: AlertDimensionFilter;
-    }
-  ) => {
+  const buildUrl = (updates: {
+    department_ids?: string[];
+    programs?: string[];
+    instructor_ids?: string[];
+    course_ids?: string[];
+    gpa_filters?: AlertDimensionFilter[];
+    attendance_filters?: AlertDimensionFilter[];
+  }) => {
     const params = new URLSearchParams();
     if (selectedAlert && selectedAlert !== "all") params.set("selected_alert", selectedAlert);
-    const nextDept = { ...current, ...updates };
-    if (nextDept.department_id) params.set("department", nextDept.department_id);
-    if (nextDept.program) params.set("program", nextDept.program);
-    if (nextDept.instructor_id) params.set("instructor", nextDept.instructor_id);
-    if (nextDept.course_id) params.set("course", nextDept.course_id);
-    const gpa = updates.gpa_filter !== undefined ? updates.gpa_filter : gpaFilter;
-    const att = updates.attendance_filter !== undefined ? updates.attendance_filter : attendanceFilter;
-    if (gpa && gpa !== "all") params.set("gpa_filter", gpa);
-    if (att && att !== "all") params.set("attendance_filter", att);
+
+    const depts = updates.department_ids !== undefined ? updates.department_ids : (current.department_ids ?? []);
+    const progs = updates.programs !== undefined ? updates.programs : (current.programs ?? []);
+    const inst = updates.instructor_ids !== undefined ? updates.instructor_ids : (current.instructor_ids ?? []);
+    const crs = updates.course_ids !== undefined ? updates.course_ids : (current.course_ids ?? []);
+    const gpa = updates.gpa_filters !== undefined ? updates.gpa_filters : (gpaFilters ?? []);
+    const att = updates.attendance_filters !== undefined ? updates.attendance_filters : (attendanceFilters ?? []);
+
+    if (depts.length) params.set("department", depts.join(","));
+    if (progs.length) params.set("program", progs.join(","));
+    if (inst.length) params.set("instructor", inst.join(","));
+    if (crs.length) params.set("course", crs.join(","));
+    if (gpa.length) params.set("gpa_filter", gpa.join(","));
+    if (att.length) params.set("attendance_filter", att.join(","));
+
     const qs = params.toString();
     return qs ? `/?${qs}` : "/";
   };
 
-  const handleDepartment = (value: string) =>
-    router.push(buildUrl({ department_id: value || undefined }));
-  const handleProgram = (value: string) =>
-    router.push(buildUrl({ program: value || undefined }));
-  const handleInstructor = (value: string) =>
-    router.push(buildUrl({ instructor_id: value || undefined }));
-  const handleCourse = (value: string) =>
-    router.push(buildUrl({ course_id: value || undefined }));
-  const handleGpaFilter = (value: string) =>
-    router.push(buildUrl({ gpa_filter: (value || "all") as AlertDimensionFilter }));
-  const handleAttendanceFilter = (value: string) =>
-    router.push(buildUrl({ attendance_filter: (value || "all") as AlertDimensionFilter }));
+  const navigate = (url: string) => router.push(url, { scroll: false });
+
+  // When parent filter changes, clear child selections so options stay in sync
+  const handleDepartment = (values: string[]) =>
+    navigate(buildUrl({ department_ids: values, programs: [], course_ids: [], instructor_ids: [] }));
+  const handleProgram = (values: string[]) =>
+    navigate(buildUrl({ programs: values, course_ids: [], instructor_ids: [] }));
+  const handleCourse = (values: string[]) =>
+    navigate(buildUrl({ course_ids: values, instructor_ids: [] }));
+  const handleInstructor = (values: string[]) =>
+    navigate(buildUrl({ instructor_ids: values }));
+  const handleGpaFilters = (values: string[]) =>
+    navigate(buildUrl({ gpa_filters: values as AlertDimensionFilter[] }));
+  const handleAttendanceFilters = (values: string[]) =>
+    navigate(buildUrl({ attendance_filters: values as AlertDimensionFilter[] }));
 
   if (!role) return null;
 
@@ -119,99 +174,104 @@ export function MasterFilter({
   const showInstructor = role === "dean" || role === "hod";
   const showCourse = true;
 
-  const hasAnyOption =
-    options.departments.length > 0 ||
-    options.programs.length > 0 ||
-    options.instructors.length > 0 ||
-    options.courses.length > 0;
-
   const hasActiveFilter =
-    !!current.department_id ||
-    !!current.program ||
-    !!current.instructor_id ||
-    !!current.course_id ||
-    (gpaFilter && gpaFilter !== "all") ||
-    (attendanceFilter && attendanceFilter !== "all");
+    (current.department_ids?.length ?? 0) > 0 ||
+    (current.programs?.length ?? 0) > 0 ||
+    (current.instructor_ids?.length ?? 0) > 0 ||
+    (current.course_ids?.length ?? 0) > 0 ||
+    (gpaFilters?.length ?? 0) > 0 ||
+    (attendanceFilters?.length ?? 0) > 0;
 
-  const handleClearAll = () => router.push("/");
+  const handleClearAll = () => navigate("/");
+
+  const toggleFilter = (key: FilterKey) => () =>
+    setOpenFilter((prev) => (prev === key ? null : key));
 
   return (
     <div
+      ref={filterPanelRef}
       className={cn(
-        " relative flex flex-wrap items-end gap-4 rounded-[10px] bg-white p-4 shadow-1 dark:bg-gray-dark dark:shadow-card",
+        "relative flex flex-wrap items-end gap-4 rounded-[10px] bg-white p-4 shadow-1 dark:bg-gray-dark dark:shadow-card",
         className
       )}
     >
-      <h3 className="text-body-sm font-semibold text-dark dark:text-white w-full mb-1">
-        Filter by
-      </h3>
       
+
       {showDepartment && options.departments.length > 0 && (
-        <FilterSelect
+        <FilterMultiSelect
           label="Department"
-          value={current.department_id ?? ""}
+          selected={current.department_ids ?? []}
           items={options.departments}
           onChange={handleDepartment}
+          isOpen={openFilter === "department"}
+          onOpenChange={toggleFilter("department")}
           data-testid="filter-department"
         />
       )}
       {showProgram && options.programs.length > 0 && (
-        <FilterSelect
+        <FilterMultiSelect
           label="Program"
-          value={current.program ?? ""}
+          selected={current.programs ?? []}
           items={options.programs}
           onChange={handleProgram}
+          isOpen={openFilter === "program"}
+          onOpenChange={toggleFilter("program")}
           data-testid="filter-program"
         />
       )}
-     
       {showCourse && options.courses.length > 0 && (
-        <FilterSelect
+        <FilterMultiSelect
           label="Course"
-          value={current.course_id ?? ""}
+          selected={current.course_ids ?? []}
           items={options.courses}
           onChange={handleCourse}
+          isOpen={openFilter === "course"}
+          onOpenChange={toggleFilter("course")}
           data-testid="filter-course"
         />
       )}
-       {showInstructor && options.instructors.length > 0 && (
-        <FilterSelect
+      {showInstructor && options.instructors.length > 0 && (
+        <FilterMultiSelect
           label="Instructor"
-          value={current.instructor_id ?? ""}
+          selected={current.instructor_ids ?? []}
           items={options.instructors}
           onChange={handleInstructor}
+          isOpen={openFilter === "instructor"}
+          onOpenChange={toggleFilter("instructor")}
           data-testid="filter-instructor"
         />
       )}
-     
-      <FilterSelect
+
+      <FilterMultiSelect
         label="Attendance"
-        value={attendanceFilter ?? "all"}
+        selected={attendanceFilters ?? []}
         items={GPA_ATTENDANCE_OPTIONS}
-        onChange={handleAttendanceFilter}
+        onChange={handleAttendanceFilters}
+        isOpen={openFilter === "attendance"}
+        onOpenChange={toggleFilter("attendance")}
         data-testid="filter-attendance"
       />
-       <FilterSelect
+      <FilterMultiSelect
         label="GPA"
-        value={gpaFilter ?? "all"}
+        selected={gpaFilters ?? []}
         items={GPA_ATTENDANCE_OPTIONS}
-        onChange={handleGpaFilter}
+        onChange={handleGpaFilters}
+        isOpen={openFilter === "gpa"}
+        onOpenChange={toggleFilter("gpa")}
         data-testid="filter-gpa"
       />
-      <div className="flex flex-col gap-1.5 absolute right-4 top-0">
-        <span className="text-body-sm font-medium text-transparent select-none">
-          Clear
-        </span>
+
+      <div className="flex flex-col gap-1.5 absolute right-4 bottom-4">
+        <span className="text-body-sm font-medium text-transparent select-none">Clear</span>
         <button
           type="button"
           onClick={handleClearAll}
           disabled={!hasActiveFilter}
           className={cn(
-            "rounded-lg border px-4 py-2.5 text-sm font-medium outline-none transition",
-            "min-w-[100px]",
+            "rounded-lg border px-4 py-2.5 text-sm font-medium outline-none transition min-w-[100px]",
             hasActiveFilter
               ? "border-stroke bg-red-600 text-white hover:bg-gray-50 dark:border-dark-3 dark:bg-gray-dark dark:text-white dark:hover:bg-dark-3"
-              : "cursor-not-allowed border-stroke/50  text-white dark:border-dark-3 dark:bg-dark-2 dark:text-dark-5 bg-red-600"
+              : "cursor-not-allowed border-stroke/50 text-white dark:border-dark-3 dark:bg-dark-2 dark:text-dark-5 bg-red-600"
           )}
         >
           Clear all

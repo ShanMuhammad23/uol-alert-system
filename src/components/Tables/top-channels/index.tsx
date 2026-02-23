@@ -17,14 +17,16 @@ import type {
   AlertDimensionFilter,
 } from "@/app/(home)/fetch";
 import Link from "next/link";
+import { StudentActionDropdown } from "@/app/(home)/_components/student-action-dropdown";
+import { getMergedLatestResultForStudent } from "@/data/student-actions-store";
 
 type PropsType = {
   className?: string;
   selectedAlert?: string;
   user?: AppUser | null;
   masterFilter?: MasterFilterParams;
-  gpaFilter?: AlertDimensionFilter;
-  attendanceFilter?: AlertDimensionFilter;
+  gpaFilters?: AlertDimensionFilter[];
+  attendanceFilters?: AlertDimensionFilter[];
 };
 
 // Helper function to extract program prefix from course ID (e.g., "CS101" -> "CS")
@@ -32,6 +34,21 @@ function getProgramFromCourse(courseId: string): string {
   // Extract alphabetic prefix from course ID
   const match = courseId.match(/^([A-Z]+)/);
   return match ? match[1] : courseId.substring(0, 2);
+}
+
+// Yellow (warning) vs red (critical) counts for overview-style display
+function getAlertCounts(students: Student[]) {
+  let gpaYellow = 0,
+    gpaRed = 0,
+    attYellow = 0,
+    attRed = 0;
+  for (const s of students) {
+    if (s.gpa.alert_level === "warning") gpaYellow += 1;
+    if (s.gpa.alert_level === "critical") gpaRed += 1;
+    if (s.attendance.alert_level === "warning") attYellow += 1;
+    if (s.attendance.alert_level === "critical") attRed += 1;
+  }
+  return { gpaYellow, gpaRed, attYellow, attRed };
 }
 
 // Group students by department -> program -> course
@@ -125,23 +142,23 @@ export async function TopChannels({
   selectedAlert = "all",
   user,
   masterFilter,
-  gpaFilter,
-  attendanceFilter,
+  gpaFilters,
+  attendanceFilters,
 }: PropsType) {
   const { students } = await getStudentsByAlert(
     selectedAlert,
     { page: 1, pageSize: 100000 },
     user,
     masterFilter,
-    gpaFilter,
-    attendanceFilter,
+    gpaFilters,
+    attendanceFilters,
   );
 
   // For deans, show nested structure: Department -> Program -> Course -> Students
   if (user?.role === "dean") {
     const data = await getFullData();
     const grouped = groupStudentsForDean(students, data.departments, data.courses);
-    
+
     // Sort departments by name
     const sortedDepartments = data.departments
       .filter((d) => grouped[d.id])
@@ -154,7 +171,7 @@ export async function TopChannels({
           className,
         )}
       >
-       
+
         {students.length === 0 ? (
           <div className="mt-6 rounded-md border border-dashed border-stroke py-8 text-center text-dark-6 dark:border-dark-3">
             No students match this filter.
@@ -188,26 +205,7 @@ export async function TopChannels({
                         Department:{" "}
                         <span className="font-bold text-primary">{department.name}</span>
                       </span>
-                      <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-dark-6 dark:text-dark-5">
-                        <span>
-                          Total students:{" "}
-                          <span className="font-semibold text-dark dark:text-white">
-                            {deptStudents.length}
-                          </span>
-                        </span>
-                        <span>
-                          GPA alerts:{" "}
-                          <span className="font-semibold text-red">
-                            {deptGpaAlerts}
-                          </span>
-                        </span>
-                        <span>
-                          Attendance alerts:{" "}
-                          <span className="font-semibold text-amber-600 dark:text-amber-400">
-                            {deptAttendanceAlerts}
-                          </span>
-                        </span>
-                      </div>
+
                     </div>
                     <span className="ml-auto text-xs text-dark-6 transition-transform group-open:rotate-180 dark:text-dark-5">
                       ▼
@@ -220,12 +218,7 @@ export async function TopChannels({
                           ([a], [b]) => a.localeCompare(b),
                         );
                         const programStudents = Object.values(programCourses).flat();
-                        const programGpaAlerts = programStudents.filter(
-                          (s) => s.gpa.alert_level !== null,
-                        ).length;
-                        const programAttendanceAlerts = programStudents.filter(
-                          (s) => s.attendance.alert_level !== null,
-                        ).length;
+                        const programAlerts = getAlertCounts(programStudents);
 
                         return (
                           <details
@@ -246,17 +239,26 @@ export async function TopChannels({
                                     </span>
                                   </span>
                                   <span>
-                                    GPA alerts:{" "}
+                                    Attendance alerts:{" "}
+                                    <span className="font-semibold text-amber-600 dark:text-amber-400">
+                                      {programAlerts.attYellow}
+                                    </span>
+                                    {" | "}
                                     <span className="font-semibold text-red">
-                                      {programGpaAlerts}
+                                      {programAlerts.attRed}
                                     </span>
                                   </span>
                                   <span>
-                                    Attendance alerts:{" "}
+                                    GPA alerts:{" "}
                                     <span className="font-semibold text-amber-600 dark:text-amber-400">
-                                      {programAttendanceAlerts}
+                                      {programAlerts.gpaYellow}
+                                    </span>
+                                    {" | "}
+                                    <span className="font-semibold text-red">
+                                      {programAlerts.gpaRed}
                                     </span>
                                   </span>
+
                                 </div>
                               </div>
                               <span className="ml-auto text-xs text-dark-6 transition-transform group-open:rotate-180 dark:text-dark-5">
@@ -274,12 +276,7 @@ export async function TopChannels({
                                       (sum, s) => sum + s.attendance.attendance_percentage,
                                       0,
                                     ) / courseStudents.length;
-                                  const gpaAlerts = courseStudents.filter(
-                                    (s) => s.gpa.alert_level !== null,
-                                  ).length;
-                                  const attendanceAlerts = courseStudents.filter(
-                                    (s) => s.attendance.alert_level !== null,
-                                  ).length;
+                                  const courseAlerts = getAlertCounts(courseStudents);
 
                                   return (
                                     <details
@@ -313,17 +310,26 @@ export async function TopChannels({
                                               </span>
                                             </span>
                                             <span>
-                                              GPA alerts:{" "}
+                                              Attendance alerts:{" "}
+                                              <span className="font-semibold text-amber-600 dark:text-amber-400">
+                                                {courseAlerts.attYellow}
+                                              </span>
+                                              {" | "}
                                               <span className="font-semibold text-red">
-                                                {gpaAlerts}
+                                                {courseAlerts.attRed}
                                               </span>
                                             </span>
                                             <span>
-                                              Attendance alerts:{" "}
+                                              GPA alerts:{" "}
                                               <span className="font-semibold text-amber-600 dark:text-amber-400">
-                                                {attendanceAlerts}
+                                                {courseAlerts.gpaYellow}
+                                              </span>
+                                              {" | "}
+                                              <span className="font-semibold text-red">
+                                                {courseAlerts.gpaRed}
                                               </span>
                                             </span>
+
                                           </div>
                                         </div>
                                         <span className="ml-auto text-xs text-dark-6 transition-transform group-open:rotate-180 dark:text-dark-5">
@@ -343,14 +349,14 @@ export async function TopChannels({
                                               <TableHead className="min-w-[80px] !text-left">
                                                 Course
                                               </TableHead>
-                                              <TableHead className="text-center">GPA</TableHead>
                                               <TableHead className="text-center">Present</TableHead>
                                               <TableHead className="text-center">Absent</TableHead>
                                               <TableHead className="text-center">
                                                 Attendance %
                                               </TableHead>
+                                              <TableHead className="text-center">GPA</TableHead>
                                               <TableHead className="min-w-[80px] !text-left">
-                                                Actions
+                                                Intervention Status
                                               </TableHead>
                                             </TableRow>
                                           </TableHeader>
@@ -383,7 +389,28 @@ export async function TopChannels({
                                                   className="text-center text-base font-medium text-dark dark:text-white"
                                                   key={student.sap_id}
                                                 >
-                                                  <TableCell className="!text-left font-medium">
+
+                                                  <TableCell className="!text-left font-medium flex items-center gap-2">
+                                                    <Link
+                                                      href={`/students/${student.sap_id}`}
+                                                      className="inline-flex items-center justify-center rounded-md p-2 text-green-500 hover:bg-gray-100 hover:text-dark dark:text-dark-5 dark:hover:bg-dark-3 dark:hover:text-white"
+                                                      title="View profile"
+                                                    >
+                                                      <svg
+                                                        xmlns="http://www.w3.org/2000/svg"
+                                                        width="20"
+                                                        height="20"
+                                                        viewBox="0 0 24 24"
+                                                        fill="none"
+                                                        stroke="currentColor"
+                                                        strokeWidth="1.5"
+                                                        strokeLinecap="round"
+                                                        strokeLinejoin="round"
+                                                      >
+                                                        <path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0" />
+                                                        <circle cx="12" cy="12" r="3" />
+                                                      </svg>
+                                                    </Link>
                                                     {student.name}
                                                   </TableCell>
                                                   <TableCell className="!text-left text-dark-6">
@@ -391,6 +418,17 @@ export async function TopChannels({
                                                   </TableCell>
                                                   <TableCell className="!text-left">
                                                     {student.course_id}
+                                                  </TableCell>
+                                                 
+                                                  <TableCell>
+                                                    {student.attendance.classes_attended}
+                                                  </TableCell>
+                                                  <TableCell>{absent}</TableCell>
+                                                  <TableCell className={cn(attColor)}>
+                                                    {student.attendance.attendance_percentage.toFixed(
+                                                      1,
+                                                    )}
+                                                    %
                                                   </TableCell>
                                                   <TableCell className={cn(gpaColor)}>
                                                     {student.gpa.current}
@@ -415,33 +453,7 @@ export async function TopChannels({
                                                     )}
                                                   </TableCell>
                                                   <TableCell>
-                                                    {student.attendance.classes_attended}
-                                                  </TableCell>
-                                                  <TableCell>{absent}</TableCell>
-                                                  <TableCell className={cn(attColor)}>
-                                                    {student.attendance.attendance_percentage.toFixed(
-                                                      1,
-                                                    )}
-                                                    %
-                                                  </TableCell>
-                                                  <TableCell>
-                                                    <Link href={`/students/${student.sap_id}`}>
-                                                      <svg
-                                                        xmlns="http://www.w3.org/2000/svg"
-                                                        width="24"
-                                                        height="24"
-                                                        viewBox="0 0 24 24"
-                                                        fill="none"
-                                                        stroke="currentColor"
-                                                        strokeWidth="1"
-                                                        strokeLinecap="round"
-                                                        strokeLinejoin="round"
-                                                        className="lucide lucide-eye-icon lucide-eye"
-                                                      >
-                                                        <path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0" />
-                                                        <circle cx="12" cy="12" r="3" />
-                                                      </svg>
-                                                    </Link>
+                                                    <StudentActionDropdown student={student} latestResult={getMergedLatestResultForStudent(student.sap_id)} />
                                                   </TableCell>
                                                 </TableRow>
                                               );
@@ -511,12 +523,7 @@ export async function TopChannels({
               const programStudents = Object.values(programInstructors).flatMap(
                 (courses) => Object.values(courses).flat(),
               );
-              const programGpaAlerts = programStudents.filter(
-                (s) => s.gpa.alert_level !== null,
-              ).length;
-              const programAttendanceAlerts = programStudents.filter(
-                (s) => s.attendance.alert_level !== null,
-              ).length;
+              const programAlerts = getAlertCounts(programStudents);
 
               return (
                 <details
@@ -538,14 +545,22 @@ export async function TopChannels({
                         </span>
                         <span>
                           GPA alerts:{" "}
+                          <span className="font-semibold text-amber-600 dark:text-amber-400">
+                            {programAlerts.gpaYellow}
+                          </span>
+                          {" | "}
                           <span className="font-semibold text-red">
-                            {programGpaAlerts}
+                            {programAlerts.gpaRed}
                           </span>
                         </span>
                         <span>
                           Attendance alerts:{" "}
                           <span className="font-semibold text-amber-600 dark:text-amber-400">
-                            {programAttendanceAlerts}
+                            {programAlerts.attYellow}
+                          </span>
+                          {" | "}
+                          <span className="font-semibold text-red">
+                            {programAlerts.attRed}
                           </span>
                         </span>
                       </div>
@@ -563,12 +578,7 @@ export async function TopChannels({
                         const instructorStudents = Object.values(
                           instructorCourses,
                         ).flat();
-                        const instructorGpaAlerts = instructorStudents.filter(
-                          (s) => s.gpa.alert_level !== null,
-                        ).length;
-                        const instructorAttendanceAlerts = instructorStudents.filter(
-                          (s) => s.attendance.alert_level !== null,
-                        ).length;
+                        const instructorAlerts = getAlertCounts(instructorStudents);
 
                         return (
                           <details
@@ -578,7 +588,7 @@ export async function TopChannels({
                             <summary className="flex cursor-pointer items-center justify-between gap-4 px-4 py-3">
                               <div className="flex flex-col gap-1">
                                 <span className="text-sm font-semibold text-dark dark:text-white">
-                                
+
                                   <span className="font-bold text-primary">
                                     {getInstructorName(instructorId)}
                                   </span>
@@ -592,14 +602,22 @@ export async function TopChannels({
                                   </span>
                                   <span>
                                     GPA alerts:{" "}
+                                    <span className="font-semibold text-amber-600 dark:text-amber-400">
+                                      {instructorAlerts.gpaYellow}
+                                    </span>
+                                    {" | "}
                                     <span className="font-semibold text-red">
-                                      {instructorGpaAlerts}
+                                      {instructorAlerts.gpaRed}
                                     </span>
                                   </span>
                                   <span>
                                     Attendance alerts:{" "}
                                     <span className="font-semibold text-amber-600 dark:text-amber-400">
-                                      {instructorAttendanceAlerts}
+                                      {instructorAlerts.attYellow}
+                                    </span>
+                                    {" | "}
+                                    <span className="font-semibold text-red">
+                                      {instructorAlerts.attRed}
                                     </span>
                                   </span>
                                 </div>
@@ -623,12 +641,7 @@ export async function TopChannels({
                                         sum + s.attendance.attendance_percentage,
                                       0,
                                     ) / courseStudents.length;
-                                  const gpaAlerts = courseStudents.filter(
-                                    (s) => s.gpa.alert_level !== null,
-                                  ).length;
-                                  const attendanceAlerts = courseStudents.filter(
-                                    (s) => s.attendance.alert_level !== null,
-                                  ).length;
+                                  const courseAlertsHod = getAlertCounts(courseStudents);
 
                                   return (
                                     <details
@@ -663,14 +676,22 @@ export async function TopChannels({
                                             </span>
                                             <span>
                                               GPA alerts:{" "}
+                                              <span className="font-semibold text-amber-600 dark:text-amber-400">
+                                                {courseAlertsHod.gpaYellow}
+                                              </span>
+                                              {" | "}
                                               <span className="font-semibold text-red">
-                                                {gpaAlerts}
+                                                {courseAlertsHod.gpaRed}
                                               </span>
                                             </span>
                                             <span>
                                               Attendance alerts:{" "}
                                               <span className="font-semibold text-amber-600 dark:text-amber-400">
-                                                {attendanceAlerts}
+                                                {courseAlertsHod.attYellow}
+                                              </span>
+                                              {" | "}
+                                              <span className="font-semibold text-red">
+                                                {courseAlertsHod.attRed}
                                               </span>
                                             </span>
                                           </div>
@@ -774,23 +795,7 @@ export async function TopChannels({
                                                     %
                                                   </TableCell>
                                                   <TableCell>
-                                                    <Link href={`/students/${student.sap_id}`}>
-                                                      <svg
-                                                        xmlns="http://www.w3.org/2000/svg"
-                                                        width="24"
-                                                        height="24"
-                                                        viewBox="0 0 24 24"
-                                                        fill="none"
-                                                        stroke="currentColor"
-                                                        strokeWidth="1"
-                                                        strokeLinecap="round"
-                                                        strokeLinejoin="round"
-                                                        className="lucide lucide-eye-icon lucide-eye"
-                                                      >
-                                                        <path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0" />
-                                                        <circle cx="12" cy="12" r="3" />
-                                                      </svg>
-                                                    </Link>
+                                                    <StudentActionDropdown student={student} latestResult={getMergedLatestResultForStudent(student.sap_id)} />
                                                   </TableCell>
                                                 </TableRow>
                                               );
@@ -856,12 +861,7 @@ export async function TopChannels({
                 (sum, s) => sum + s.attendance.attendance_percentage,
                 0,
               ) / courseStudents.length;
-            const gpaAlerts = courseStudents.filter(
-              (s) => s.gpa.alert_level !== null,
-            ).length;
-            const attendanceAlerts = courseStudents.filter(
-              (s) => s.attendance.alert_level !== null,
-            ).length;
+            const courseAlertsTeacher = getAlertCounts(courseStudents);
 
             return (
               <details
@@ -889,14 +889,22 @@ export async function TopChannels({
                       </span>
                       <span>
                         GPA alerts:{" "}
+                        <span className="font-semibold text-amber-600 dark:text-amber-400">
+                          {courseAlertsTeacher.gpaYellow}
+                        </span>
+                        {" | "}
                         <span className="font-semibold text-red">
-                          {gpaAlerts}
+                          {courseAlertsTeacher.gpaRed}
                         </span>
                       </span>
                       <span>
                         Attendance alerts:{" "}
                         <span className="font-semibold text-amber-600 dark:text-amber-400">
-                          {attendanceAlerts}
+                          {courseAlertsTeacher.attYellow}
+                        </span>
+                        {" | "}
+                        <span className="font-semibold text-red">
+                          {courseAlertsTeacher.attRed}
                         </span>
                       </span>
                     </div>
@@ -924,9 +932,9 @@ export async function TopChannels({
                         <TableHead className="text-center">
                           Attendance %
                         </TableHead>
-                   
-                        
-                       
+
+
+
                         <TableHead className="min-w-[80px] !text-left">
                           Actions
                         </TableHead>
@@ -992,8 +1000,8 @@ export async function TopChannels({
                                 </span>
                               )}
                             </TableCell>
-                           
-                           
+
+
                             <TableCell>
                               {student.attendance.classes_attended}
                             </TableCell>
@@ -1005,23 +1013,7 @@ export async function TopChannels({
                               %
                             </TableCell>
                             <TableCell>
-                              <Link href={`/students/${student.sap_id}`}>
-                                <svg
-                                  xmlns="http://www.w3.org/2000/svg"
-                                  width="24"
-                                  height="24"
-                                  viewBox="0 0 24 24"
-                                  fill="none"
-                                  stroke="currentColor"
-                                  strokeWidth="1"
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  className="lucide lucide-eye-icon lucide-eye"
-                                >
-                                  <path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0" />
-                                  <circle cx="12" cy="12" r="3" />
-                                </svg>
-                              </Link>
+                              <StudentActionDropdown student={student} latestResult={getMergedLatestResultForStudent(student.sap_id)} />
                             </TableCell>
                           </TableRow>
                         );

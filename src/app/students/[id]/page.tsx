@@ -5,6 +5,13 @@ import { notFound } from "next/navigation";
 import { cn } from "@/lib/utils";
 import type { Metadata } from "next";
 import { CampaignVisitorsChart } from "@/components/Charts/campaign-visitors/chart";
+import InterventionForm from "@/components/Forms/Intervention-Form";
+import {
+  getActionsByStudentSapId,
+  getActionTypeLabel,
+  getActionResultLabel,
+} from "@/data/student-actions";
+import { getMergedActionsByStudentSapId } from "@/data/student-actions-store";
 
 type PropsType = {
   params: Promise<{ id: string }>;
@@ -67,12 +74,18 @@ function MetricCard({
     none: "border-l-4 border-l-emerald-500",
   };
 
+  const alertBg = {
+    critical: "bg-red-50 dark:bg-red-900/20",
+    warning: "bg-amber-50 dark:bg-amber-900/20",
+    none: "bg-emerald-50 dark:bg-emerald-900/20",
+  };
+
   return (
     <div
       className={cn(
-        "relative overflow-hidden rounded-xl  p-5 shadow-sm transition-shadow hover:shadow-md",
+        "relative overflow-hidden rounded-xl p-5 shadow-sm transition-shadow hover:shadow-md",
         alertBorders[alert || "none"],
-        alert === "critical" ? "bg-red-500 dark:bg-red-600" : alert === "warning" ? "bg-amber-50 dark:bg-amber-900/20" : "bg-emerald-50 dark:bg-emerald-900/20"
+        alertBg[alert || "none"]
       )}
     >
       <div className="flex items-start justify-between">
@@ -173,6 +186,8 @@ export default async function StudentPage({ params }: PropsType) {
 
   const report = generateAlertReport(student);
 
+  const actionHistory = getMergedActionsByStudentSapId(student.sap_id);
+
   // Calculate metrics
   const attendanceDiff =
     student.attendance.attendance_percentage - student.attendance.class_average_attendance;
@@ -181,55 +196,7 @@ export default async function StudentPage({ params }: PropsType) {
   return (
     <div className="w-full space-y-6">
       {/* Header Section */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-         {/* Alert History / Action Items */}
-      {(student.gpa.alert_level || student.attendance.alert_level) && (
-        <div className="rounded-2xl border border-red-200 bg-red-50 p-6 dark:border-red-900/50 dark:bg-red-900/20">
-          <h3 className="mb-3 flex items-center gap-2 text-lg font-bold text-red-800 dark:text-red-200">
-            <span>⚠️</span>
-            Attention Required
-          </h3>
-          <ul className="space-y-2 text-sm text-red-700 dark:text-red-300">
-            {student.gpa.alert_level === "critical" && (
-              <li className="flex items-start gap-2">
-                <span className="mt-1 h-1.5 w-1.5 rounded-full bg-red-500" />
-                GPA is critically low ({student.gpa.current}). Immediate academic intervention recommended.
-              </li>
-            )}
-            {student.gpa.alert_level === "warning" && (
-              <li className="flex items-start gap-2">
-                <span className="mt-1 h-1.5 w-1.5 rounded-full bg-amber-500" />
-                GPA declining trend detected. Monitor academic progress closely.
-              </li>
-            )}
-            {student.attendance.alert_level === "critical" && (
-              <li className="flex items-start gap-2">
-                <span className="mt-1 h-1.5 w-1.5 rounded-full bg-red-500" />
-                Attendance below 75% ({student.attendance.attendance_percentage.toFixed(1)}%). At risk of course failure.
-              </li>
-            )}
-            {student.attendance.alert_level === "warning" && (
-              <li className="flex items-start gap-2">
-                <span className="mt-1 h-1.5 w-1.5 rounded-full bg-amber-500" />
-                Attendance below class average. Engagement improvement needed.
-              </li>
-            )}
-          </ul>
-        </div>
-      )}
-        <div className="flex items-center gap-2">
-          <AlertBadge
-            level={student.overall_alert}
-            label={
-              student.overall_alert === "critical"
-                ? "Critical Alert"
-                : student.overall_alert === "warning"
-                ? "Warning"
-                : "Good Standing"
-            }
-          />
-        </div>
-      </div>
+ 
 
       {/* Profile Hero Card */}
       <div className="overflow-hidden rounded-2xl bg-white shadow-lg dark:bg-gray-dark">
@@ -284,14 +251,20 @@ export default async function StudentPage({ params }: PropsType) {
                 </span>
               </div>
             </div>
-            <MetricCard
+            {/* <MetricCard
             title="Attendance vs Avg"
             value={`${attendanceDiff >= 0 ? "+" : ""}${attendanceDiff.toFixed(1)}%`}
             subtitle={`Class avg: ${student.attendance.class_average_attendance.toFixed(1)}%`}
             trend={attendanceDiff >= 0 ? "up" : "down"}
-            alert={attendanceDiff < -10 ? "critical" : attendanceDiff < 0 ? "warning" : "none"}
+            alert={
+              student.attendance.alert_level === "critical"
+                ? "critical"
+                : student.attendance.alert_level === "warning"
+                  ? "warning"
+                  : "none"
+            }
             icon="👥"
-          />
+          /> */}
             <div className="flex gap-3">
               <AlertBadge
                 level={student.gpa.alert_level || "none"}
@@ -315,7 +288,7 @@ export default async function StudentPage({ params }: PropsType) {
           <div className="mb-6 flex items-center justify-between">
             <div>
               <h3 className="text-lg font-bold text-gray-900 dark:text-white">
-                Attendance Analysis
+                Attendance
               </h3>
               <p className="text-sm text-gray-500 dark:text-gray-400">
                 Performance vs class average
@@ -324,11 +297,11 @@ export default async function StudentPage({ params }: PropsType) {
             <div
               className={cn(
                 "flex h-12 w-12 items-center justify-center rounded-xl text-2xl",
-                attendanceDiff < -10
-                  ? "bg-red-100 text-red-600 dark:bg-red-900/30"
-                  : attendanceDiff < 0
-                  ? "bg-amber-100 text-amber-600 dark:bg-amber-900/30"
-                  : "bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30"
+                student.attendance.alert_level === "critical"
+                  ? "bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400"
+                  : student.attendance.alert_level === "warning"
+                    ? "bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400"
+                    : "bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400"
               )}
             >
               📅
@@ -342,26 +315,26 @@ export default async function StudentPage({ params }: PropsType) {
               label="Your Attendance"
               comparison={attendanceDiff}
               type={
-                student.attendance.attendance_percentage < 75
+                student.attendance.alert_level === "critical"
                   ? "danger"
-                  : student.attendance.attendance_percentage < 85
-                  ? "warning"
-                  : "success"
+                  : student.attendance.alert_level === "warning"
+                    ? "warning"
+                    : "success"
               }
             />
 
             <div className="grid grid-cols-2 gap-4 rounded-xl bg-gray-50 p-4 dark:bg-gray-800/50">
               <div className="text-center">
-                <p className="text-2xl font-bold text-gray-900 dark:text-white">
+                <p className="text-2xl font-bold text-green-500 dark:text-green-500">
                   {student.attendance.classes_attended}
                 </p>
-                <p className="text-xs text-gray-500 dark:text-gray-400">Classes Attended</p>
+                <p className="text-xs text-green-500 dark:text-green-500">Classes Attended</p>
               </div>
               <div className="text-center">
-                <p className="text-2xl font-bold text-gray-900 dark:text-white">
+                <p className="text-2xl font-bold text-red-500 dark:text-red-500">
                   {student.attendance.total_classes_held - student.attendance.classes_attended}
                 </p>
-                <p className="text-xs text-gray-500 dark:text-gray-400">Classes Missed</p>
+                <p className="text-xs text-red-500 dark:text-red-400">Classes Missed</p>
               </div>
             </div>
 
@@ -374,7 +347,7 @@ export default async function StudentPage({ params }: PropsType) {
           <div className="mb-6 flex items-center justify-between">
             <div>
               <h3 className="text-lg font-bold text-gray-900 dark:text-white">
-                GPA Analysis
+                GPA 
               </h3>
               <p className="text-sm text-gray-500 dark:text-gray-400">
                 Academic performance tracking
@@ -440,13 +413,7 @@ export default async function StudentPage({ params }: PropsType) {
               </div>
             </div>
 
-            {report.gpa_comparison.alert_triggered && (
-              <div className="rounded-lg border-l-4 border-amber-500 bg-amber-50 p-3 dark:bg-amber-900/20">
-                <p className="text-sm font-medium text-amber-800 dark:text-amber-200">
-                  ⚠️ {report.gpa_comparison.alert_reason}
-                </p>
-              </div>
-            )}
+         
 
             {report.gpa_comparison.history && report.gpa_comparison.history.length > 0 && (
               <div>
@@ -467,7 +434,66 @@ export default async function StudentPage({ params }: PropsType) {
         </div>
       </div>
 
-     
+      {/* Action History */}
+      <div className="rounded-2xl bg-white p-6 shadow-sm dark:bg-gray-dark">
+        <div className="mb-4 flex items-center justify-between">
+          <div>
+            <h3 className="text-lg font-bold text-gray-900 dark:text-white">
+              Intervention History
+            </h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              Interventions and follow-ups for this student
+            </p>
+          </div>
+          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-slate-100 text-2xl dark:bg-slate-800">
+            📋
+          </div>
+        </div>
+        {actionHistory.length === 0 ? (
+          <p className="rounded-lg border border-dashed border-stroke py-6 text-center text-sm text-gray-500 dark:border-dark-3 dark:text-gray-400">
+            No actions recorded yet for this student.
+          </p>
+        ) : (
+          <ul className="space-y-3">
+            {actionHistory.map((action) => (
+              <li
+                key={action.id}
+                className="flex flex-col gap-1 rounded-xl border border-stroke bg-gray-50 p-4 dark:border-dark-3 dark:bg-dark-2/50 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-medium text-gray-900 dark:text-white">
+                    {getActionTypeLabel(action.action_type)}
+                  </span>
+                  <span
+                    className={cn(
+                      "rounded-full px-2.5 py-0.5 text-xs font-semibold",
+                      action.result === "improved"
+                        ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300"
+                        : "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300"
+                    )}
+                  >
+                    {getActionResultLabel(action.result)}
+                  </span>
+                </div>
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gray-500 dark:text-gray-400">
+                  <time dateTime={action.performed_at}>
+                    {new Date(action.performed_at).toLocaleDateString(undefined, {
+                      dateStyle: "medium",
+                    })}
+                  </time>
+                  {action.note && (
+                    <span className="italic text-gray-600 dark:text-gray-300">
+                      {action.note}
+                    </span>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+     <InterventionForm />
     </div>
   );
 }

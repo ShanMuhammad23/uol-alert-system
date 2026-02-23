@@ -11,7 +11,7 @@ import type { Metadata } from "next";
 import NextTopLoader from "nextjs-toploader";
 import type { PropsWithChildren } from "react";
 import { Providers } from "./providers";
-import { getCurrentUser } from "./(home)/fetch";
+import { getCurrentUser, getFullData, getScreenHeading } from "./(home)/fetch";
 
 export const metadata: Metadata = {
   title: {
@@ -23,7 +23,8 @@ export const metadata: Metadata = {
 };
 
 export default async function RootLayout({ children }: PropsWithChildren) {
-  const user = await getCurrentUser();
+  const [user, data] = await Promise.all([getCurrentUser(), getFullData()]);
+  const screenHeading = getScreenHeading(user, data);
 
   return (
     <html lang="en" suppressHydrationWarning>
@@ -32,12 +33,12 @@ export default async function RootLayout({ children }: PropsWithChildren) {
           <NextTopLoader color="#5750F1" showSpinner={false} />
 
           <div className="flex min-h-screen">
-            <Sidebar user={user} />
+
 
             <div className="w-full bg-gray-2 dark:bg-[#020d1a]">
-              <Header user={user} />
+              <Header user={user} screenHeading={screenHeading} />
 
-              <main className="isolate mx-auto w-full max-w-screen-2xl overflow-hidden p-2">
+              <main className=" mx-auto w-full  overflow-hidden px-8 py-4">
                 {children}
               </main>
             </div>

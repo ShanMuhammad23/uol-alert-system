@@ -7,30 +7,30 @@ type PropsType = {
   className?: string;
   user?: AppUser | null;
   masterFilter?: MasterFilterParams;
-  gpaFilter?: AlertDimensionFilter;
-  attendanceFilter?: AlertDimensionFilter;
+  gpaFilters?: AlertDimensionFilter[];
+  attendanceFilters?: AlertDimensionFilter[];
 };
 
 export async function OverviewChart({
   className,
   user,
   masterFilter,
-  gpaFilter,
-  attendanceFilter,
+  gpaFilters,
+  attendanceFilters,
 }: PropsType) {
   return (
     <div className={cn("grid grid-cols-2", className)}>
       <AttendanceChart
         user={user}
         masterFilter={masterFilter}
-        gpaFilter={gpaFilter}
-        attendanceFilter={attendanceFilter}
+        gpaFilters={gpaFilters}
+        attendanceFilters={attendanceFilters}
       />
       <GPAChart
         user={user}
         masterFilter={masterFilter}
-        gpaFilter={gpaFilter}
-        attendanceFilter={attendanceFilter}
+        gpaFilters={gpaFilters}
+        attendanceFilters={attendanceFilters}
       />
     </div>
   );

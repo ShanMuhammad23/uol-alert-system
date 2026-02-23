@@ -7,15 +7,26 @@ import { OverviewCardsSkeleton } from "./_components/overview-cards/skeleton";
 import { getCurrentUser, getMasterFilterOptions } from "./fetch";
 import type { MasterFilterParams, AlertDimensionFilter } from "./fetch";
 import { DeanDepartmentStats } from "./_components/dean-department-stats";
+import { DeanInstructorStats } from "./_components/dean-instructor-stats";
+import { DeanStatsCollapsible } from "./_components/dean-stats-collapsible";
 import { MasterFilter } from "./_components/master-filter";
+import { CampaignVisitorsChart } from "@/components/Charts/campaign-visitors/chart";
+
+function parseMultiParam(
+  value: string | string[] | undefined
+): string[] {
+  if (value == null) return [];
+  const raw = Array.isArray(value) ? value : [value];
+  return raw.flatMap((s) => s.split(",").map((x) => x.trim()).filter(Boolean));
+}
 
 type PropsType = {
   searchParams: Promise<{
     selected_alert?: string;
-    department?: string;
-    program?: string;
-    instructor?: string;
-    course?: string;
+    department?: string | string[];
+    program?: string | string[];
+    instructor?: string | string[];
+    course?: string | string[];
     gpa_filter?: string;
     attendance_filter?: string;
   }>;
@@ -26,54 +37,84 @@ export default async function Home({ searchParams }: PropsType) {
   const selectedAlert = params.selected_alert || "all";
   const user = await getCurrentUser();
 
+  const departmentIds = parseMultiParam(params.department);
+  const programs = parseMultiParam(params.program);
+  const instructorIds = parseMultiParam(params.instructor);
+  const courseIds = parseMultiParam(params.course);
+
   const masterFilter: MasterFilterParams = {
-    department_id: params.department || undefined,
-    program: params.program || undefined,
-    instructor_id: params.instructor || undefined,
-    course_id: params.course || undefined,
+    department_ids: departmentIds.length ? departmentIds : undefined,
+    programs: programs.length ? programs : undefined,
+    instructor_ids: instructorIds.length ? instructorIds : undefined,
+    course_ids: courseIds.length ? courseIds : undefined,
   };
 
-  const gpaFilter = (params.gpa_filter === "red" || params.gpa_filter === "yellow" || params.gpa_filter === "good"
-    ? params.gpa_filter
-    : "all") as AlertDimensionFilter;
-  const attendanceFilter = (params.attendance_filter === "red" || params.attendance_filter === "yellow" || params.attendance_filter === "good"
-    ? params.attendance_filter
-    : "all") as AlertDimensionFilter;
+  const validAlertDim = (s: string): s is AlertDimensionFilter =>
+    s === "red" || s === "yellow" || s === "good";
+  const gpaFiltersRaw = parseMultiParam(params.gpa_filter);
+  const attendanceFiltersRaw = parseMultiParam(params.attendance_filter);
+  const gpaFilters = gpaFiltersRaw.filter(validAlertDim) as AlertDimensionFilter[];
+  const attendanceFilters = attendanceFiltersRaw.filter(validAlertDim) as AlertDimensionFilter[];
 
-  const filterKey = [selectedAlert, params.department, params.program, params.instructor, params.course, params.gpa_filter, params.attendance_filter].join("-");
-  const filterOptions = await getMasterFilterOptions(user);
+  const filterKey = [selectedAlert, ...departmentIds, ...programs, ...instructorIds, ...courseIds, params.gpa_filter, params.attendance_filter].join("-");
+  const filterOptions = await getMasterFilterOptions(user, masterFilter);
 
   return (
     <>
       {/* Row 1: Overview cards + Charts in one row */}
       <div className="mt-4 grid grid-cols-12 gap-4 md:mt-6">
-        <div className="col-span-12 lg:col-span-6">
+        <div className="col-span-12 md:col-span-6">
           <Suspense fallback={<OverviewCardsSkeleton />}>
             <OverviewCardsGroup
               selectedAlert={selectedAlert}
               user={user}
               masterFilter={masterFilter}
-              gpaFilter={gpaFilter}
-              attendanceFilter={attendanceFilter}
+              gpaFilters={gpaFilters}
+              attendanceFilters={attendanceFilters}
             />
           </Suspense>
         </div>
-        <div className="col-span-12 lg:col-span-6">
-          <Suspense fallback={<OverviewCardsSkeleton />}>
-            <OverviewChart
-              user={user}
-              masterFilter={masterFilter}
-              gpaFilter={gpaFilter}
-              attendanceFilter={attendanceFilter}
-            />
-          </Suspense>
-        </div>
+        <div className=" col-span-12 md:col-span-6">
+      <CampaignVisitorsChart
+            data={[
+              { x: "Not Started", y: 100 },
+              { x: "Initiated", y: 168 },
+              { x: "In-Progress", y: 385 },
+              { x: "Resolved", y: 298 },
+              { x: "Referred", y: 201 },
+            ]}
+            statusColors={{
+              "Not Started": "#DE2649",
+              "Initiated": "#B5B126",
+              "In-Progress": "#DBBE0F",
+              "Referred": "#9C5A99",
+              "Resolved": "#477061",
+            }}
+          />
       </div>
-
-      {/* Row 2: Dean department stats full width */}
+      </div>
+    
+      
+      {/* Row 2: Dean department & instructor stats (collapsible, parent-child) */}
       <div className="mt-4 mb-4 grid grid-cols-12 gap-4">
         <div className="col-span-12">
-          <DeanDepartmentStats user={user} />
+          {user?.role === "dean" && (
+            <DeanStatsCollapsible
+              departmentContent={
+                <DeanDepartmentStats
+                  user={user}
+                  selectedDepartmentId={departmentIds[0]}
+                />
+              }
+              instructorContent={
+                <DeanInstructorStats
+                  user={user}
+                  selectedDepartmentId={departmentIds[0]}
+                  selectedInstructorId={instructorIds[0]}
+                />
+              }
+            />
+          )}
         </div>
       </div>
 
@@ -84,8 +125,8 @@ export default async function Home({ searchParams }: PropsType) {
             current={masterFilter}
             role={user?.role}
             selectedAlert={selectedAlert}
-            gpaFilter={gpaFilter}
-            attendanceFilter={attendanceFilter}
+            gpaFilters={gpaFilters}
+            attendanceFilters={attendanceFilters}
           />
         </div>
       </Suspense>
@@ -96,8 +137,8 @@ export default async function Home({ searchParams }: PropsType) {
             selectedAlert={selectedAlert}
             user={user}
             masterFilter={masterFilter}
-            gpaFilter={gpaFilter}
-            attendanceFilter={attendanceFilter}
+            gpaFilters={gpaFilters}
+            attendanceFilters={attendanceFilters}
           />
         </Suspense>
       </div>

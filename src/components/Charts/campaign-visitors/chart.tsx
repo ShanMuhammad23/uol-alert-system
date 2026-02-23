@@ -3,20 +3,44 @@
 import type { ApexOptions } from "apexcharts";
 import dynamic from "next/dynamic";
 
+type DataPoint = {
+  x: string;
+  y: number;
+};
+
 type PropsType = {
-  data: {
-    x: string;
-    y: number;
-  }[];
+  data: DataPoint[];
+  /** Map each bar (by x-axis label / status) to a hex color. Bars not in the map use defaultColor. */
+  statusColors?: Record<string, string>;
+  /** Fallback color when statusColors has no entry for a bar (default: gray) */
+  defaultColor?: string;
 };
 
 const Chart = dynamic(() => import("react-apexcharts"), {
   ssr: false,
 });
 
-export function CampaignVisitorsChart({ data }: PropsType) {
+const DEFAULT_BAR_COLOR = "#94A3B8";
+
+export function CampaignVisitorsChart({
+  data,
+  statusColors,
+  defaultColor = DEFAULT_BAR_COLOR,
+}: PropsType) {
+  const colors = data.map((d) => statusColors?.[d.x] ?? defaultColor);
+
   const options: ApexOptions = {
-    colors: ["#5750F1"],
+   
+    title: {
+      text: "Outreach & Intervention Status",
+      style: {
+        fontSize: "20px",
+        fontWeight: "bold",
+        color: "#000",
+        
+      },
+    },
+    colors,
     chart: {
       fontFamily: "Satoshi, sans-serif",
       type: "bar",
@@ -30,10 +54,11 @@ export function CampaignVisitorsChart({ data }: PropsType) {
         horizontal: false,
         columnWidth: "40%",
         borderRadius: 3,
+        distributed: true,
       },
     },
     dataLabels: {
-      enabled: false,
+      enabled: true,
     },
     stroke: {
       show: true,
@@ -49,7 +74,7 @@ export function CampaignVisitorsChart({ data }: PropsType) {
       },
     },
     legend: {
-      show: true,
+      show:false,
       position: "top",
       horizontalAlign: "left",
       fontFamily: "Satoshi",
@@ -73,7 +98,7 @@ export function CampaignVisitorsChart({ data }: PropsType) {
   };
 
   return (
-    <div className="-ml-3.5 px-6 pb-1 pt-7.5">
+    <div className="">
       <Chart
         options={options}
         series={[
@@ -84,6 +109,7 @@ export function CampaignVisitorsChart({ data }: PropsType) {
         ]}
         type="bar"
         height={230}
+        
       />
     </div>
   );

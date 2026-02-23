@@ -10,9 +10,10 @@ import type { AppUser } from "@/app/(home)/fetch";
 
 type HeaderProps = {
   user?: AppUser | null;
+  screenHeading?: string | null;
 };
 
-export function Header({ user }: HeaderProps) {
+export function Header({ user, screenHeading }: HeaderProps) {
   const { toggleSidebar, isMobile } = useSidebarContext();
 
   return (
@@ -41,6 +42,11 @@ export function Header({ user }: HeaderProps) {
         <h1 className="mb-0.5 text-heading-5 font-bold text-dark dark:text-white">
           Student Early Alert System
         </h1>
+        {screenHeading && (
+          <p className="text-lg font-medium text-green-600 dark:text-dark-5">
+            {screenHeading}
+          </p>
+        )}
       </div>
 
       <div className="flex flex-1 items-center justify-end gap-2 min-[375px]:gap-4">

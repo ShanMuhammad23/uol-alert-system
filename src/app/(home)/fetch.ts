@@ -13,40 +13,42 @@ export function getProgramFromCourse(courseId: string): string {
 }
 
 export type MasterFilterParams = {
-  department_id?: string;
-  program?: string;
-  instructor_id?: string;
-  course_id?: string;
+  department_ids?: string[];
+  programs?: string[];
+  instructor_ids?: string[];
+  course_ids?: string[];
 };
 
 /** GPA / Attendance filter: all | red (critical) | yellow (warning) | good (no alert) */
 export type AlertDimensionFilter = "all" | "red" | "yellow" | "good";
 
+function levelMatchesFilters(
+  level: "critical" | "warning" | null,
+  filters: AlertDimensionFilter[] | undefined
+): boolean {
+  if (!filters?.length) return true;
+  const allowed = new Set<string | null>();
+  for (const f of filters) {
+    if (f === "red") allowed.add("critical");
+    else if (f === "yellow") allowed.add("warning");
+    else if (f === "good") allowed.add(null);
+  }
+  return allowed.has(level);
+}
+
 function applyGpaAttendanceFilter(
   students: Student[],
-  gpaFilter: AlertDimensionFilter | undefined,
-  attendanceFilter: AlertDimensionFilter | undefined
+  gpaFilters: AlertDimensionFilter[] | undefined,
+  attendanceFilters: AlertDimensionFilter[] | undefined
 ): Student[] {
-  const valid = (v: string | undefined): v is AlertDimensionFilter =>
-    v === "all" || v === "red" || v === "yellow" || v === "good";
   let out = students;
-  if (valid(gpaFilter) && gpaFilter !== "all") {
-    out = out.filter((s) => {
-      const level = s.gpa.alert_level;
-      if (gpaFilter === "red") return level === "critical";
-      if (gpaFilter === "yellow") return level === "warning";
-      if (gpaFilter === "good") return level === null;
-      return true;
-    });
+  if (gpaFilters?.length) {
+    out = out.filter((s) => levelMatchesFilters(s.gpa.alert_level, gpaFilters));
   }
-  if (valid(attendanceFilter) && attendanceFilter !== "all") {
-    out = out.filter((s) => {
-      const level = s.attendance.alert_level;
-      if (attendanceFilter === "red") return level === "critical";
-      if (attendanceFilter === "yellow") return level === "warning";
-      if (attendanceFilter === "good") return level === null;
-      return true;
-    });
+  if (attendanceFilters?.length) {
+    out = out.filter((s) =>
+      levelMatchesFilters(s.attendance.alert_level, attendanceFilters)
+    );
   }
   return out;
 }
@@ -141,7 +143,8 @@ function isValidAlertFilter(value: string): value is AlertFilter {
 
 export const THRESHOLDS = {
   attendance: { warning: 40, critical: 20 },
-  gpa: { warning_drop: 1.0, critical_drop: 0.5 },
+  /** GPA: drop >= 1.0 → red (critical), drop >= 0.5 and < 1.0 → yellow (warning) */
+  gpa: { warning_drop: 0.5, critical_drop: 1.0 },
 } as const;
 
 const VALID_ROLES = ["dean", "hod", "teacher"] as const;
@@ -149,8 +152,8 @@ const VALID_ROLES = ["dean", "hod", "teacher"] as const;
 export async function getOverviewData(
   user?: AppUser | null,
   masterFilter?: MasterFilterParams,
-  gpaFilter?: AlertDimensionFilter,
-  attendanceFilter?: AlertDimensionFilter
+  gpaFilters?: AlertDimensionFilter[],
+  attendanceFilters?: AlertDimensionFilter[]
 ) {
   const data = await getDataJson();
   const { students: allStudents } = data;
@@ -160,7 +163,7 @@ export async function getOverviewData(
     ? (getStudentsForRole(user as User, allStudents) as Student[])
     : allStudents;
   students = applyMasterFilter(students, masterFilter, data);
-  students = applyGpaAttendanceFilter(students, gpaFilter, attendanceFilter);
+  students = applyGpaAttendanceFilter(students, gpaFilters, attendanceFilters);
 
   let yellowGpa = 0;
   let redGpa = 0;
@@ -188,14 +191,55 @@ export async function getOverviewData(
   };
 }
 
+/** Derive GPA alert_level from gpa.change using thresholds: drop >= 1 = red, drop >= 0.5 = yellow */
+function applyGpaAlertThreshold(student: Student): void {
+  const drop = Math.abs(Math.min(0, student.gpa.change));
+  if (drop >= THRESHOLDS.gpa.critical_drop) {
+    student.gpa.alert_level = "critical";
+  } else if (drop >= THRESHOLDS.gpa.warning_drop) {
+    student.gpa.alert_level = "warning";
+  } else {
+    student.gpa.alert_level = null;
+  }
+  const g = student.gpa.alert_level;
+  const a = student.attendance.alert_level;
+  student.overall_alert =
+    g === "critical" || a === "critical"
+      ? "critical"
+      : g === "warning" || a === "warning"
+        ? "warning"
+        : "none";
+}
+
 async function getDataJson(): Promise<DataJson> {
   const dataPath = path.join(process.cwd(), "public", DATA_FILE);
   const raw = await readFile(dataPath, "utf-8");
-  return JSON.parse(raw);
+  const data = JSON.parse(raw) as DataJson;
+  data.students.forEach(applyGpaAlertThreshold);
+  return data;
 }
 
 export async function getFullData(): Promise<DataJson> {
   return getDataJson();
+}
+
+/** Screen heading by role: Faculty name (dean), Department name(s) (hod), Instructor name (teacher). */
+export function getScreenHeading(
+  user: AppUser | null,
+  data: { faculties: Faculty[]; departments: Department[] }
+): string | null {
+  if (!user) return null;
+  if (user.role === "dean" && user.faculty_id) {
+    return data.faculties.find((f) => f.id === user.faculty_id)?.name ?? null;
+  }
+  if (user.role === "hod" && user.department_ids?.length) {
+    const names = data.departments
+      .filter((d) => user.department_ids!.includes(d.id))
+      .map((d) => d.name);
+    return names.length ? names.join(", ") : null;
+  }
+  if (user.role === "teacher") return user.name;
+  return null;
 }
 
 function applyMasterFilter(
@@ -205,38 +249,75 @@ function applyMasterFilter(
 ): Student[] {
   if (!masterFilter || Object.keys(masterFilter).length === 0) return students;
   let out = students;
-  if (masterFilter.department_id) {
-    out = out.filter((s) => s.department_id === masterFilter.department_id);
+  if (masterFilter.department_ids?.length) {
+    out = out.filter((s) => masterFilter.department_ids!.includes(s.department_id));
   }
-  if (masterFilter.program) {
-    out = out.filter((s) => getProgramFromCourse(s.course_id) === masterFilter.program);
-  }
-  if (masterFilter.course_id) {
-    out = out.filter((s) => s.course_id === masterFilter.course_id);
-  }
-  if (masterFilter.instructor_id) {
-    const instructor = data.users.find(
-      (u) => u.id === masterFilter.instructor_id && u.role === "teacher" && u.course_ids?.length
+  if (masterFilter.programs?.length) {
+    out = out.filter((s) =>
+      masterFilter.programs!.includes(getProgramFromCourse(s.course_id))
     );
-    const courseIds = instructor?.course_ids ?? [];
-    if (courseIds.length) {
-      out = out.filter((s) => courseIds.includes(s.course_id));
+  }
+  if (masterFilter.course_ids?.length) {
+    out = out.filter((s) => masterFilter.course_ids!.includes(s.course_id));
+  }
+  if (masterFilter.instructor_ids?.length) {
+    const courseIds = new Set<string>();
+    for (const uid of masterFilter.instructor_ids) {
+      const instructor = data.users.find(
+        (u) => u.id === uid && u.role === "teacher" && u.course_ids?.length
+      );
+      instructor?.course_ids?.forEach((id) => courseIds.add(id));
+    }
+    if (courseIds.size) {
+      out = out.filter((s) => courseIds.has(s.course_id));
     }
   }
   return out;
 }
 
-export async function getMasterFilterOptions(user?: AppUser | null): Promise<MasterFilterOptions> {
+/** Get filter options with parent-child cascade: Department → Program → Course → Instructor. */
+export async function getMasterFilterOptions(
+  user?: AppUser | null,
+  current?: MasterFilterParams
+): Promise<MasterFilterOptions> {
   const data = await getDataJson();
   const departments = getDepartmentsForRole(user as User, data.departments).map((d) => ({
     value: d.id,
     label: d.name,
   }));
-  const coursesForRole = getCoursesForRole(user as User, data.courses);
+
+  let coursesForRole = getCoursesForRole(user as User, data.courses);
+
+  // Cascade: filter courses by selected departments
+  if (current?.department_ids?.length) {
+    coursesForRole = coursesForRole.filter((c) =>
+      current.department_ids!.includes(c.department_id)
+    );
+  }
+
+  // Programs = program prefixes from (cascaded) courses
   const programSet = new Set(coursesForRole.map((c) => getProgramFromCourse(c.id)));
   const programs = Array.from(programSet)
     .sort((a, b) => a.localeCompare(b))
     .map((p) => ({ value: p, label: p }));
+
+  // Cascade: filter courses by selected programs
+  let coursesFiltered = coursesForRole;
+  if (current?.programs?.length) {
+    coursesFiltered = coursesFiltered.filter((c) =>
+      current.programs!.includes(getProgramFromCourse(c.id))
+    );
+  }
+
+  const courses = coursesFiltered.map((c) => ({
+    value: c.id,
+    label: `${c.id} – ${c.name}`,
+  }));
+
+  // Instructors: who teach (selected courses) or who teach any of the cascaded courses
+  const courseIdsForInstructors = current?.course_ids?.length
+    ? current.course_ids
+    : coursesFiltered.map((c) => c.id);
 
   const teachers = data.users.filter((u) => u.role === "teacher" && u.department_id);
   let instructors: { value: string; label: string }[] = [];
@@ -245,23 +326,32 @@ export async function getMasterFilterOptions(user?: AppUser | null): Promise<Mas
       .filter((d) => d.faculty_id === user.faculty_id)
       .map((d) => d.id);
     instructors = teachers
-      .filter((t) => t.department_id && deptIdsInFaculty.includes(t.department_id))
+      .filter(
+        (t) =>
+          t.department_id &&
+          deptIdsInFaculty.includes(t.department_id) &&
+          t.course_ids?.some((cid) => courseIdsForInstructors.includes(cid))
+      )
       .map((t) => ({ value: t.id, label: t.name }));
   } else if (user?.role === "hod" && user.department_ids?.length) {
     instructors = teachers
-      .filter((t) => t.department_id && user.department_ids!.includes(t.department_id))
+      .filter(
+        (t) =>
+          t.department_id &&
+          user.department_ids!.includes(t.department_id) &&
+          t.course_ids?.some((cid) => courseIdsForInstructors.includes(cid))
+      )
       .map((t) => ({ value: t.id, label: t.name }));
   } else if (user?.role === "teacher") {
     instructors = teachers
-      .filter((t) => t.id === user.id)
+      .filter(
+        (t) =>
+          t.id === user.id &&
+          t.course_ids?.some((cid) => courseIdsForInstructors.includes(cid))
+      )
       .map((t) => ({ value: t.id, label: t.name }));
   }
   instructors.sort((a, b) => a.label.localeCompare(b.label));
-
-  const courses = coursesForRole.map((c) => ({
-    value: c.id,
-    label: `${c.id} – ${c.name}`,
-  }));
 
   return { departments, programs, instructors, courses };
 }
@@ -276,14 +366,20 @@ export type DepartmentStats = {
   redAttendance: number;
 };
 
-/** Stats per department for a faculty (dean view). When facultyId is null, returns all departments. */
+/** Stats per department for a faculty (dean view). When facultyId is null, returns all departments. Relation is one-way: department only (instructor does not filter departments). */
 export async function getDeanDepartmentStats(
-  facultyId: string | null
+  facultyId: string | null,
+  options?: { departmentIds?: string[] }
 ): Promise<DepartmentStats[]> {
   const data = await getDataJson();
-  const departments = facultyId
+  let departments = facultyId
     ? data.departments.filter((d) => d.faculty_id === facultyId)
     : data.departments;
+
+  if (options?.departmentIds?.length) {
+    const set = new Set(options.departmentIds);
+    departments = departments.filter((d) => set.has(d.id));
+  }
 
   return departments.map((dept) => {
     const students = data.students.filter((s) => s.department_id === dept.id);
@@ -300,6 +396,68 @@ export async function getDeanDepartmentStats(
     return {
       departmentId: dept.id,
       departmentName: dept.name,
+      total: students.length,
+      yellowGpa,
+      redGpa,
+      yellowAttendance,
+      redAttendance,
+    };
+  });
+}
+
+export type InstructorStats = {
+  instructorId: string;
+  instructorName: string;
+  total: number;
+  yellowGpa: number;
+  redGpa: number;
+  yellowAttendance: number;
+  redAttendance: number;
+};
+
+/** Stats per instructor for a faculty (dean view). Returns instructors in departments under the given faculty. */
+export async function getDeanInstructorStats(
+  facultyId: string | null,
+  options?: { departmentIds?: string[]; instructorIds?: string[] }
+): Promise<InstructorStats[]> {
+  const data = await getDataJson();
+  const deptIdsInFaculty =
+    facultyId != null
+      ? data.departments.filter((d) => d.faculty_id === facultyId).map((d) => d.id)
+      : data.departments.map((d) => d.id);
+
+  let teachers = data.users.filter(
+    (u) =>
+      u.role === "teacher" &&
+      u.department_id &&
+      deptIdsInFaculty.includes(u.department_id) &&
+      u.course_ids?.length
+  );
+
+  if (options?.instructorIds?.length) {
+    const set = new Set(options.instructorIds);
+    teachers = teachers.filter((t) => set.has(t.id));
+  } else if (options?.departmentIds?.length) {
+    const set = new Set(options.departmentIds);
+    teachers = teachers.filter((t) => t.department_id && set.has(t.department_id));
+  }
+
+  return teachers.map((teacher) => {
+    const courseIds = new Set(teacher.course_ids ?? []);
+    const students = data.students.filter((s) => courseIds.has(s.course_id));
+    let yellowGpa = 0,
+      redGpa = 0,
+      yellowAttendance = 0,
+      redAttendance = 0;
+    for (const s of students) {
+      if (s.gpa.alert_level === "critical") redGpa += 1;
+      if (s.gpa.alert_level === "warning") yellowGpa += 1;
+      if (s.attendance.alert_level === "critical") redAttendance += 1;
+      if (s.attendance.alert_level === "warning") yellowAttendance += 1;
+    }
+    return {
+      instructorId: teacher.id,
+      instructorName: teacher.name,
       total: students.length,
       yellowGpa,
       redGpa,
@@ -345,8 +503,8 @@ export async function getStudentsByAlert(
   options?: { page?: number; pageSize?: number },
   user?: AppUser | null,
   masterFilter?: MasterFilterParams,
-  gpaFilter?: AlertDimensionFilter,
-  attendanceFilter?: AlertDimensionFilter
+  gpaFilters?: AlertDimensionFilter[],
+  attendanceFilters?: AlertDimensionFilter[]
 ): Promise<StudentsByAlertResult> {
   const data = await getDataJson();
   const allRaw = data.students;
@@ -372,7 +530,7 @@ export async function getStudentsByAlert(
         });
 
   filtered = applyMasterFilter(filtered, masterFilter, data);
-  filtered = applyGpaAttendanceFilter(filtered, gpaFilter, attendanceFilter);
+  filtered = applyGpaAttendanceFilter(filtered, gpaFilters, attendanceFilters);
 
   const total = filtered.length;
   const pageSize = options?.pageSize ?? DEFAULT_PAGE_SIZE;
@@ -425,10 +583,10 @@ export function generateAlertReport(student: Student): AlertReport {
     attStatus = att.attendance_percentage <= THRESHOLDS.attendance.critical ? "critical" : "below_average";
   }
 
-  const gpaDrop = Math.abs(gpa.change);
+  const gpaDrop = Math.abs(Math.min(0, gpa.change));
   let alertReason: string | null = null;
   if (student.gpa.alert_level === "critical") {
-    alertReason = gpaDrop >= THRESHOLDS.gpa.warning_drop ? "GPA drop >= 1.0" : "GPA drop >= 0.5";
+    alertReason = "GPA drop >= 1.0";
   } else if (student.gpa.alert_level === "warning") {
     alertReason = "GPA drop >= 0.5";
   }

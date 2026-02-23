@@ -20,16 +20,16 @@ const Chart = dynamic(() => import("react-apexcharts"), {
 });
 
 /** Small chart: render at this size so it fits inside container without overflow */
-const SMALL_CHART_SIZE = 160;
+const SMALL_CHART_SIZE = 120;
 /** Container for small chart: clips any overflow */
-const SMALL_CONTAINER_SIZE = 160;
+const SMALL_CONTAINER_SIZE = 120;
 
 export function DonutChart({
   data,
   colors = ["#5750F1", "#5475E5", "#8099EC", "#ADBCF2"],
   centerLabel = "Visitors",
   centerValue,
-  size = "default",
+  size = "sm",
 }: PropsType) {
   const isSm = size === "sm";
   const chartSize = isSm ? SMALL_CHART_SIZE : 320;
@@ -103,7 +103,7 @@ export function DonutChart({
   return (
     <div
       className={cn(
-        "mx-auto flex items-center justify-center",
+        "mx-auto flex items-center justify-center ",
         isSm
           ? "shrink-0 overflow-hidden"
           : "w-full max-w-[420px]"
