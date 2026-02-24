@@ -38,7 +38,7 @@ export default async function RootLayout({ children }: PropsWithChildren) {
             <div className="w-full bg-gray-2 dark:bg-[#020d1a]">
               <Header user={user} screenHeading={screenHeading} />
 
-              <main className=" mx-auto w-full  overflow-hidden px-8 py-4">
+              <main className=" mx-auto w-full  overflow-hidden px-8 ">
                 {children}
               </main>
             </div>

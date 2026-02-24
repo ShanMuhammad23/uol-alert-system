@@ -29,6 +29,7 @@ type PropsType = {
     course?: string | string[];
     gpa_filter?: string;
     attendance_filter?: string;
+    intervention_filter?: string | string[];
   }>;
 };
 
@@ -55,14 +56,15 @@ export default async function Home({ searchParams }: PropsType) {
   const attendanceFiltersRaw = parseMultiParam(params.attendance_filter);
   const gpaFilters = gpaFiltersRaw.filter(validAlertDim) as AlertDimensionFilter[];
   const attendanceFilters = attendanceFiltersRaw.filter(validAlertDim) as AlertDimensionFilter[];
+  const interventionFilters = parseMultiParam(params.intervention_filter);
 
-  const filterKey = [selectedAlert, ...departmentIds, ...programs, ...instructorIds, ...courseIds, params.gpa_filter, params.attendance_filter].join("-");
+  const filterKey = [selectedAlert, ...departmentIds, ...programs, ...instructorIds, ...courseIds, params.gpa_filter, params.attendance_filter, params.intervention_filter].join("-");
   const filterOptions = await getMasterFilterOptions(user, masterFilter);
 
   return (
     <>
       {/* Row 1: Overview cards + Charts in one row */}
-      <div className="mt-4 grid grid-cols-12 gap-4 md:mt-6">
+      <div className="mt-4 grid grid-cols-12 gap-4 md:mt-6 bg-white rounded-lg p-4 shadow-1">
         <div className="col-span-12 md:col-span-6">
           <Suspense fallback={<OverviewCardsSkeleton />}>
             <OverviewCardsGroup
@@ -100,6 +102,7 @@ export default async function Home({ searchParams }: PropsType) {
         <div className="col-span-12">
           {user?.role === "dean" && (
             <DeanStatsCollapsible
+              selectedDepartmentId={departmentIds[0]}
               departmentContent={
                 <DeanDepartmentStats
                   user={user}
@@ -127,6 +130,7 @@ export default async function Home({ searchParams }: PropsType) {
             selectedAlert={selectedAlert}
             gpaFilters={gpaFilters}
             attendanceFilters={attendanceFilters}
+            interventionFilters={interventionFilters}
           />
         </div>
       </Suspense>

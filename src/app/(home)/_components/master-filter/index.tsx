@@ -12,6 +12,14 @@ const GPA_ATTENDANCE_OPTIONS: { value: AlertDimensionFilter; label: string }[] =
   { value: "good", label: "Good standing" },
 ];
 
+const INTERVENTION_STATUS_OPTIONS: { value: string; label: string }[] = [
+  { value: "not_started", label: "Not Started" },
+  { value: "initiated", label: "Initiated" },
+  { value: "in_progress", label: "In-Progress" },
+  { value: "referred", label: "Referred" },
+  { value: "resolved", label: "Resolved" },
+];
+
 type PropsType = {
   options: MasterFilterOptions;
   current: MasterFilterParams;
@@ -19,10 +27,11 @@ type PropsType = {
   selectedAlert: string;
   gpaFilters: AlertDimensionFilter[];
   attendanceFilters: AlertDimensionFilter[];
+  interventionFilters: string[];
   className?: string;
 };
 
-type FilterKey = "department" | "program" | "course" | "instructor" | "attendance" | "gpa";
+type FilterKey = "department" | "program" | "course" | "instructor" | "attendance" | "gpa" | "intervention";
 
 function FilterMultiSelect({
   label,
@@ -55,10 +64,13 @@ function FilterMultiSelect({
         ? selected.map((v) => items.find((i) => i.value === v)?.label ?? v).join(", ")
         : `${selected.length} selected`;
 
+  const labelWithCount =
+    selected.length > 0 ? `${label} (${selected.length})` : label;
+
   return (
     <div className="flex flex-col gap-1.5 relative" data-testid={testId}>
       <label className="text-body-sm font-medium text-dark dark:text-white">
-        {label}
+        {labelWithCount}
       </label>
       <button
         type="button"
@@ -116,6 +128,7 @@ export function MasterFilter({
   selectedAlert,
   gpaFilters,
   attendanceFilters,
+  interventionFilters,
   className,
 }: PropsType) {
   const router = useRouter();
@@ -129,6 +142,7 @@ export function MasterFilter({
     course_ids?: string[];
     gpa_filters?: AlertDimensionFilter[];
     attendance_filters?: AlertDimensionFilter[];
+    intervention_filters?: string[];
   }) => {
     const params = new URLSearchParams();
     if (selectedAlert && selectedAlert !== "all") params.set("selected_alert", selectedAlert);
@@ -139,6 +153,7 @@ export function MasterFilter({
     const crs = updates.course_ids !== undefined ? updates.course_ids : (current.course_ids ?? []);
     const gpa = updates.gpa_filters !== undefined ? updates.gpa_filters : (gpaFilters ?? []);
     const att = updates.attendance_filters !== undefined ? updates.attendance_filters : (attendanceFilters ?? []);
+    const intervention = updates.intervention_filters !== undefined ? updates.intervention_filters : (interventionFilters ?? []);
 
     if (depts.length) params.set("department", depts.join(","));
     if (progs.length) params.set("program", progs.join(","));
@@ -146,6 +161,7 @@ export function MasterFilter({
     if (crs.length) params.set("course", crs.join(","));
     if (gpa.length) params.set("gpa_filter", gpa.join(","));
     if (att.length) params.set("attendance_filter", att.join(","));
+    if (intervention.length) params.set("intervention_filter", intervention.join(","));
 
     const qs = params.toString();
     return qs ? `/?${qs}` : "/";
@@ -166,6 +182,8 @@ export function MasterFilter({
     navigate(buildUrl({ gpa_filters: values as AlertDimensionFilter[] }));
   const handleAttendanceFilters = (values: string[]) =>
     navigate(buildUrl({ attendance_filters: values as AlertDimensionFilter[] }));
+  const handleInterventionFilters = (values: string[]) =>
+    navigate(buildUrl({ intervention_filters: values }));
 
   if (!role) return null;
 
@@ -180,7 +198,8 @@ export function MasterFilter({
     (current.instructor_ids?.length ?? 0) > 0 ||
     (current.course_ids?.length ?? 0) > 0 ||
     (gpaFilters?.length ?? 0) > 0 ||
-    (attendanceFilters?.length ?? 0) > 0;
+    (attendanceFilters?.length ?? 0) > 0 ||
+    (interventionFilters?.length ?? 0) > 0;
 
   const handleClearAll = () => navigate("/");
 
@@ -259,6 +278,15 @@ export function MasterFilter({
         isOpen={openFilter === "gpa"}
         onOpenChange={toggleFilter("gpa")}
         data-testid="filter-gpa"
+      />
+      <FilterMultiSelect
+        label="Intervention"
+        selected={interventionFilters ?? []}
+        items={INTERVENTION_STATUS_OPTIONS}
+        onChange={handleInterventionFilters}
+        isOpen={openFilter === "intervention"}
+        onOpenChange={toggleFilter("intervention")}
+        data-testid="filter-intervention"
       />
 
       <div className="flex flex-col gap-1.5 absolute right-4 bottom-4">

@@ -47,7 +47,7 @@ export async function OverviewCardsGroup({
   ];
 
   return (
-    <div className="flex flex-wrap gap-2">
+    <div className="flex flex-wrap gap-2 ">
       {cards.map(({ filter, label, data, Icon }) => (
         <Link
           key={filter}

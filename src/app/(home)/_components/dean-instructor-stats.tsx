@@ -51,18 +51,18 @@ export async function DeanInstructorStats({
           </span>
           <span className="text-body-base text-dark-6 space-x-2 dark:text-dark-5">
             Att:{" "}
-            <span className="text-amber-500 dark:text-amber-500 font-bold">
+            <span className={cn("text-amber-500 dark:text-amber-500 font-bold", i.yellowAttendance > 0 ? "text-amber-500 dark:text-amber-500" : "text-gray-600 dark:text-gray-400")}>
               {i.yellowAttendance}
             </span>
             {" | "}
-            <span className="text-red-500 font-bold">{i.redAttendance}</span>
+            <span className={cn("text-red-500 font-bold", i.redAttendance > 0 ? "text-red-500" : "text-gray-600 dark:text-gray-400")}>{i.redAttendance}</span>
             {" · "}
             GPA:{" "}
-            <span className="text-amber-500 dark:text-amber-500 font-bold">
+            <span className={cn("text-amber-500 dark:text-amber-500 font-bold", i.yellowGpa > 0 ? "text-amber-500 dark:text-amber-500" : "text-gray-600 dark:text-gray-400")}>
               {i.yellowGpa}
             </span>
             {" | "}
-            <span className="text-red-500 font-bold">{i.redGpa}</span>
+            <span className={cn("text-red-500 font-bold", i.redGpa > 0 ? "text-red-500" : "text-gray-600 dark:text-gray-400")}>{i.redGpa}</span>
           </span>
         </Link>
       ))}
