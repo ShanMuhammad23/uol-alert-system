@@ -11,6 +11,7 @@ import { DeanInstructorStats } from "./_components/dean-instructor-stats";
 import { DeanStatsCollapsible } from "./_components/dean-stats-collapsible";
 import { MasterFilter } from "./_components/master-filter";
 import { CampaignVisitorsChart } from "@/components/Charts/campaign-visitors/chart";
+import { ExpandableListUrlSync } from "./_components/ExpandableListUrlSync";
 
 function parseMultiParam(
   value: string | string[] | undefined
@@ -30,6 +31,7 @@ type PropsType = {
     gpa_filter?: string;
     attendance_filter?: string;
     intervention_filter?: string | string[];
+    expanded?: string;
   }>;
 };
 
@@ -61,10 +63,26 @@ export default async function Home({ searchParams }: PropsType) {
   const filterKey = [selectedAlert, ...departmentIds, ...programs, ...instructorIds, ...courseIds, params.gpa_filter, params.attendance_filter, params.intervention_filter].join("-");
   const filterOptions = await getMasterFilterOptions(user, masterFilter);
 
+  // Build URL to restore filters (and later expanded state) when returning from student profile
+  const returnToParams = new URLSearchParams();
+  if (selectedAlert && selectedAlert !== "all") returnToParams.set("selected_alert", selectedAlert);
+  if (departmentIds.length) returnToParams.set("department", departmentIds.join(","));
+  if (programs.length) returnToParams.set("program", programs.join(","));
+  if (instructorIds.length) returnToParams.set("instructor", instructorIds.join(","));
+  if (courseIds.length) returnToParams.set("course", courseIds.join(","));
+  if (gpaFilters.length) returnToParams.set("gpa_filter", gpaFilters.join(","));
+  if (attendanceFilters.length) returnToParams.set("attendance_filter", attendanceFilters.join(","));
+  if (interventionFilters.length) returnToParams.set("intervention_filter", interventionFilters.join(","));
+  const expandedParam = params.expanded;
+  if (expandedParam) returnToParams.set("expanded", expandedParam);
+  const returnToUrl = returnToParams.toString() ? `/?${returnToParams.toString()}` : "/";
+
+  const expandedIds = expandedParam ? expandedParam.split(",").map((s) => s.trim()).filter(Boolean) : [];
+
   return (
     <>
       {/* Row 1: Overview cards + Charts in one row */}
-      <div className="mt-4 grid grid-cols-12 gap-4 md:mt-6 bg-white rounded-lg p-4 shadow-1">
+      <div className="mt-4 grid grid-cols-12 gap-4 md:mt-6 bg-white dark:bg-gray-800 rounded-lg p-4 shadow-1">
         <div className="col-span-12 md:col-span-6">
           <Suspense fallback={<OverviewCardsSkeleton />}>
             <OverviewCardsGroup
@@ -137,13 +155,17 @@ export default async function Home({ searchParams }: PropsType) {
 
       <div className="col-span-12">
         <Suspense fallback={<TopChannelsSkeleton />} key={filterKey}>
-          <TopChannels
-            selectedAlert={selectedAlert}
-            user={user}
-            masterFilter={masterFilter}
-            gpaFilters={gpaFilters}
-            attendanceFilters={attendanceFilters}
-          />
+          <ExpandableListUrlSync>
+            <TopChannels
+              returnToUrl={returnToUrl}
+              expandedIds={expandedIds}
+              selectedAlert={selectedAlert}
+              user={user}
+              masterFilter={masterFilter}
+              gpaFilters={gpaFilters}
+              attendanceFilters={attendanceFilters}
+            />
+          </ExpandableListUrlSync>
         </Suspense>
       </div>
     </>

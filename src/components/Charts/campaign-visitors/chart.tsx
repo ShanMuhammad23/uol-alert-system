@@ -31,15 +31,7 @@ export function CampaignVisitorsChart({
 
   const options: ApexOptions = {
    
-    title: {
-      text: "Outreach & Intervention Status",
-      style: {
-        fontSize: "20px",
-        fontWeight: "bold",
-        color: "#000",
-        
-      },
-    },
+  
     colors,
     chart: {
       fontFamily: "Satoshi, sans-serif",

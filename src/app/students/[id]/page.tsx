@@ -1,20 +1,23 @@
 import Breadcrumb from "@/components/Breadcrumbs/Breadcrumb";
 import { getStudentBySapId, generateAlertReport } from "@/app/(home)/fetch";
 import Image from "next/image";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { cn } from "@/lib/utils";
 import type { Metadata } from "next";
 import { CampaignVisitorsChart } from "@/components/Charts/campaign-visitors/chart";
-import InterventionForm from "@/components/Forms/Intervention-Form";
+import { InterventionHistorySection } from "./_components/InterventionHistorySection";
 import {
   getActionsByStudentSapId,
   getActionTypeLabel,
   getActionResultLabel,
 } from "@/data/student-actions";
 import { getMergedActionsByStudentSapId } from "@/data/student-actions-store";
+import { getInterventionsByStudentSapId } from "@/data/intervention-store";
 
 type PropsType = {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ from?: string }>;
 };
 
 export async function generateMetadata({ params }: PropsType): Promise<Metadata> {
@@ -146,7 +149,15 @@ function ProgressBar({
           {label}
         </span>
         <div className="flex items-center gap-2">
-          <span className="font-bold text-gray-900 dark:text-white">
+          <span
+            className={cn(
+              "font-bold",
+              type === "danger" && "text-red-600 dark:text-red-400",
+              type === "warning" && "text-amber-600 dark:text-amber-400",
+              type === "success" && "text-emerald-600 dark:text-emerald-400",
+              type === "neutral" && "text-gray-900 dark:text-white"
+            )}
+          >
             {value.toFixed(1)}%
           </span>
           {comparison !== undefined && (
@@ -178,8 +189,10 @@ function ProgressBar({
   );
 }
 
-export default async function StudentPage({ params }: PropsType) {
+export default async function StudentPage({ params, searchParams }: PropsType) {
   const { id } = await params;
+  const resolvedSearchParams = await searchParams;
+  const returnToUrl = resolvedSearchParams.from && resolvedSearchParams.from.startsWith("/") ? resolvedSearchParams.from : "/";
   const student = await getStudentBySapId(id);
 
   if (!student) notFound();
@@ -187,6 +200,7 @@ export default async function StudentPage({ params }: PropsType) {
   const report = generateAlertReport(student);
 
   const actionHistory = getMergedActionsByStudentSapId(student.sap_id);
+  const interventionHistory = getInterventionsByStudentSapId(student.sap_id);
 
   // Calculate metrics
   const attendanceDiff =
@@ -195,8 +209,18 @@ export default async function StudentPage({ params }: PropsType) {
 
   return (
     <div className="w-full space-y-6">
-      {/* Header Section */}
- 
+      {/* Back to list / Dashboard */}
+      <div className="flex items-center gap-2">
+        <Link
+          href={returnToUrl}
+          className="inline-flex items-center gap-2 text-sm font-medium text-primary hover:underline"
+        >
+          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+          Back to list
+        </Link>
+      </div>
 
       {/* Profile Hero Card */}
       <div className="overflow-hidden rounded-2xl bg-white shadow-lg dark:bg-gray-dark">
@@ -368,6 +392,26 @@ export default async function StudentPage({ params }: PropsType) {
           </div>
 
           <div className="space-y-6">
+            {/* GPA drop: <0.5 green, 0.5–<1 yellow, >=1 red */}
+            {(() => {
+              const drop = student.gpa.change <= 0 ? Math.abs(student.gpa.change) : 0;
+              const changeCardType = drop >= 1 ? "red" : drop >= 0.5 ? "yellow" : "green";
+              const changeBg = {
+                red: "bg-red-50 dark:bg-red-900/20",
+                yellow: "bg-amber-50 dark:bg-amber-900/20",
+                green: "bg-emerald-50 dark:bg-emerald-900/20",
+              };
+              const changeText = {
+                red: "text-red-700 dark:text-red-400",
+                yellow: "text-amber-700 dark:text-amber-400",
+                green: "text-emerald-700 dark:text-emerald-400",
+              };
+              const changeSub = {
+                red: "text-red-600/70 dark:text-red-400/70",
+                yellow: "text-amber-600/70 dark:text-amber-400/70",
+                green: "text-emerald-600/70 dark:text-emerald-400/70",
+              };
+              return (
             <div className="grid grid-cols-3 gap-3">
               <div className="rounded-xl bg-blue-50 p-3 text-center dark:bg-blue-900/20">
                 <p className="text-xl font-bold text-blue-700 dark:text-blue-400">
@@ -385,33 +429,18 @@ export default async function StudentPage({ params }: PropsType) {
                   Previous
                 </p>
               </div>
-              <div
-                className={cn(
-                  "rounded-xl p-3 text-center",
-                  student.gpa.change >= 0
-                    ? "bg-emerald-50 dark:bg-emerald-900/20"
-                    : "bg-red-50 dark:bg-red-900/20"
-                )}
-              >
-                <p
-                  className={cn(
-                    "text-xl font-bold",
-                    student.gpa.change >= 0 ? "text-emerald-700 dark:text-emerald-400" : "text-red-700 dark:text-red-400"
-                  )}
-                >
+              <div className={cn("rounded-xl p-3 text-center", changeBg[changeCardType])}>
+                <p className={cn("text-xl font-bold", changeText[changeCardType])}>
                   {student.gpa.change > 0 ? "+" : ""}
                   {student.gpa.change}
                 </p>
-                <p
-                  className={cn(
-                    "text-[10px] font-medium uppercase tracking-wide",
-                    student.gpa.change >= 0 ? "text-emerald-600/70" : "text-red-600/70"
-                  )}
-                >
+                <p className={cn("text-[10px] font-medium uppercase tracking-wide", changeSub[changeCardType])}>
                   Change
                 </p>
               </div>
             </div>
+              );
+            })()}
 
          
 
@@ -434,66 +463,13 @@ export default async function StudentPage({ params }: PropsType) {
         </div>
       </div>
 
-      {/* Action History */}
-      <div className="rounded-2xl bg-white p-6 shadow-sm dark:bg-gray-dark">
-        <div className="mb-4 flex items-center justify-between">
-          <div>
-            <h3 className="text-lg font-bold text-gray-900 dark:text-white">
-              Intervention History
-            </h3>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              Interventions and follow-ups for this student
-            </p>
-          </div>
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-slate-100 text-2xl dark:bg-slate-800">
-            📋
-          </div>
-        </div>
-        {actionHistory.length === 0 ? (
-          <p className="rounded-lg border border-dashed border-stroke py-6 text-center text-sm text-gray-500 dark:border-dark-3 dark:text-gray-400">
-            No actions recorded yet for this student.
-          </p>
-        ) : (
-          <ul className="space-y-3">
-            {actionHistory.map((action) => (
-              <li
-                key={action.id}
-                className="flex flex-col gap-1 rounded-xl border border-stroke bg-gray-50 p-4 dark:border-dark-3 dark:bg-dark-2/50 sm:flex-row sm:items-center sm:justify-between"
-              >
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-medium text-gray-900 dark:text-white">
-                    {getActionTypeLabel(action.action_type)}
-                  </span>
-                  <span
-                    className={cn(
-                      "rounded-full px-2.5 py-0.5 text-xs font-semibold",
-                      action.result === "improved"
-                        ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300"
-                        : "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300"
-                    )}
-                  >
-                    {getActionResultLabel(action.result)}
-                  </span>
-                </div>
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gray-500 dark:text-gray-400">
-                  <time dateTime={action.performed_at}>
-                    {new Date(action.performed_at).toLocaleDateString(undefined, {
-                      dateStyle: "medium",
-                    })}
-                  </time>
-                  {action.note && (
-                    <span className="italic text-gray-600 dark:text-gray-300">
-                      {action.note}
-                    </span>
-                  )}
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
+      {/* Intervention History (table + Add Intervention dialog) */}
+      <InterventionHistorySection
+        interventions={interventionHistory}
+        studentSapId={student.sap_id}
+      />
 
-     <InterventionForm />
+     
     </div>
   );
 }

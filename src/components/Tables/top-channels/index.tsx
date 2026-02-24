@@ -16,12 +16,15 @@ import type {
   MasterFilterParams,
   AlertDimensionFilter,
 } from "@/app/(home)/fetch";
-import Link from "next/link";
 import { StudentActionDropdown } from "@/app/(home)/_components/student-action-dropdown";
-import { getMergedLatestResultForStudent } from "@/data/student-actions-store";
+import { getLatestInterventionStatusForStudent } from "@/data/intervention-store";
+import { InterventionStatusBadge } from "@/app/(home)/_components/intervention-status-badge";
+import { StudentProfileLink } from "./StudentProfileLink";
 
 type PropsType = {
   className?: string;
+  returnToUrl?: string;
+  expandedIds?: string[];
   selectedAlert?: string;
   user?: AppUser | null;
   masterFilter?: MasterFilterParams;
@@ -139,6 +142,8 @@ function groupStudentsForHodInstructors(
 
 export async function TopChannels({
   className,
+  returnToUrl = "/",
+  expandedIds = [],
   selectedAlert = "all",
   user,
   masterFilter,
@@ -183,6 +188,7 @@ export async function TopChannels({
               const programEntries = Object.entries(deptPrograms).sort(([a], [b]) =>
                 a.localeCompare(b),
               );
+              const deptSectionId = `dept-${department.id}`;
 
               // Calculate department stats
               const deptStudents = Object.values(deptPrograms)
@@ -197,6 +203,8 @@ export async function TopChannels({
               return (
                 <details
                   key={department.id}
+                  data-section-id={deptSectionId}
+                  open={expandedIds.includes(deptSectionId)}
                   className="group rounded-md border border-stroke bg-gray-50 dark:border-dark-3 dark:bg-dark-2"
                 >
                   <summary className="flex cursor-pointer items-center justify-between gap-4 px-4 py-3">
@@ -219,10 +227,13 @@ export async function TopChannels({
                         );
                         const programStudents = Object.values(programCourses).flat();
                         const programAlerts = getAlertCounts(programStudents);
+                        const progSectionId = `${deptSectionId}-prog-${programId}`;
 
                         return (
                           <details
                             key={programId}
+                            data-section-id={progSectionId}
+                            open={expandedIds.includes(progSectionId)}
                             className="group rounded-md border border-stroke bg-gray-50 dark:border-dark-3 dark:bg-dark-2"
                           >
                             <summary className="flex cursor-pointer items-center justify-between gap-4 px-4 py-3">
@@ -277,10 +288,13 @@ export async function TopChannels({
                                       0,
                                     ) / courseStudents.length;
                                   const courseAlerts = getAlertCounts(courseStudents);
+                                  const courseSectionId = `${progSectionId}-course-${courseId}`;
 
                                   return (
                                     <details
                                       key={courseId}
+                                      data-section-id={courseSectionId}
+                                      open={expandedIds.includes(courseSectionId)}
                                       className="group rounded-md border border-stroke bg-gray-50 dark:border-dark-3 dark:bg-dark-2"
                                     >
                                       <summary className="flex cursor-pointer items-center justify-between gap-4 px-4 py-3">
@@ -338,8 +352,8 @@ export async function TopChannels({
                                       </summary>
                                       <div className="border-t border-stroke bg-white px-2 py-3 dark:border-dark-3 dark:bg-gray-dark">
                                         <Table>
-                                          <TableHeader>
-                                            <TableRow className="border-none uppercase [&>th]:text-center">
+                                          <TableHeader className="sticky top-0 z-10 border-b border-stroke bg-white dark:bg-gray-dark dark:border-dark-3 [&>tr]:border-stroke dark:[&>tr]:border-dark-3">
+                                            <TableRow className="border-none uppercase [&>th]:text-center [&>th]:bg-white [&>th]:dark:bg-gray-dark">
                                               <TableHead className="min-w-[140px] !text-left">
                                                 Name
                                               </TableHead>
@@ -391,9 +405,10 @@ export async function TopChannels({
                                                 >
 
                                                   <TableCell className="!text-left font-medium flex items-center gap-2">
-                                                    <Link
-                                                      href={`/students/${student.sap_id}`}
-                                                      className="inline-flex items-center justify-center rounded-md p-2 text-green-500 hover:bg-gray-100 hover:text-dark dark:text-dark-5 dark:hover:bg-dark-3 dark:hover:text-white"
+                                                    <StudentProfileLink
+                                                      sapId={student.sap_id}
+                                                      returnToUrl={returnToUrl}
+                                                      className="inline-flex items-center gap-2 text-green-500 hover:bg-gray-100 hover:text-dark dark:text-dark-5 dark:hover:bg-dark-3 dark:hover:text-white rounded-md p-2 -m-2"
                                                       title="View profile"
                                                     >
                                                       <svg
@@ -410,8 +425,8 @@ export async function TopChannels({
                                                         <path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0" />
                                                         <circle cx="12" cy="12" r="3" />
                                                       </svg>
-                                                    </Link>
-                                                    {student.name}
+                                                      {student.name}
+                                                    </StudentProfileLink>
                                                   </TableCell>
                                                   <TableCell className="!text-left text-dark-6">
                                                     {student.sap_id}
@@ -453,7 +468,10 @@ export async function TopChannels({
                                                     )}
                                                   </TableCell>
                                                   <TableCell>
-                                                    <StudentActionDropdown student={student} latestResult={getMergedLatestResultForStudent(student.sap_id)} />
+                                                    <div className="flex flex-wrap items-center gap-2">
+                                                      <InterventionStatusBadge status={getLatestInterventionStatusForStudent(student.sap_id)} />
+                                                      <StudentActionDropdown student={student} latestResult={null} />
+                                                    </div>
                                                   </TableCell>
                                                 </TableRow>
                                               );
@@ -524,10 +542,13 @@ export async function TopChannels({
                 (courses) => Object.values(courses).flat(),
               );
               const programAlerts = getAlertCounts(programStudents);
+              const hodProgId = `hod-prog-${programId}`;
 
               return (
                 <details
                   key={programId}
+                  data-section-id={hodProgId}
+                  open={expandedIds.includes(hodProgId)}
                   className="group rounded-md border border-stroke bg-gray-50 dark:border-dark-3 dark:bg-dark-2"
                 >
                   <summary className="flex cursor-pointer items-center justify-between gap-4 px-4 py-3">
@@ -579,10 +600,13 @@ export async function TopChannels({
                           instructorCourses,
                         ).flat();
                         const instructorAlerts = getAlertCounts(instructorStudents);
+                        const hodInstId = `${hodProgId}-inst-${instructorId}`;
 
                         return (
                           <details
                             key={instructorId}
+                            data-section-id={hodInstId}
+                            open={expandedIds.includes(hodInstId)}
                             className="group rounded-md border border-stroke bg-gray-50 dark:border-dark-3 dark:bg-dark-2"
                           >
                             <summary className="flex cursor-pointer items-center justify-between gap-4 px-4 py-3">
@@ -642,10 +666,13 @@ export async function TopChannels({
                                       0,
                                     ) / courseStudents.length;
                                   const courseAlertsHod = getAlertCounts(courseStudents);
+                                  const hodCourseId = `${hodInstId}-course-${courseId}`;
 
                                   return (
                                     <details
                                       key={courseId}
+                                      data-section-id={hodCourseId}
+                                      open={expandedIds.includes(hodCourseId)}
                                       className="group rounded-md border border-stroke bg-gray-50 dark:border-dark-3 dark:bg-dark-2"
                                     >
                                       <summary className="flex cursor-pointer items-center justify-between gap-4 px-4 py-3">
@@ -702,8 +729,8 @@ export async function TopChannels({
                                       </summary>
                                       <div className="border-t border-stroke bg-white px-2 py-3 dark:border-dark-3 dark:bg-gray-dark">
                                         <Table>
-                                          <TableHeader>
-                                            <TableRow className="border-none uppercase [&>th]:text-center">
+                                          <TableHeader className="sticky top-0 z-10 border-b border-stroke bg-white dark:bg-gray-dark dark:border-dark-3 [&>tr]:border-stroke dark:[&>tr]:border-dark-3">
+                                            <TableRow className="border-none uppercase [&>th]:text-center [&>th]:bg-white [&>th]:dark:bg-gray-dark">
                                               <TableHead className="min-w-[140px] !text-left">
                                                 Name
                                               </TableHead>
@@ -720,7 +747,7 @@ export async function TopChannels({
                                                 Attendance %
                                               </TableHead>
                                               <TableHead className="min-w-[80px] !text-left">
-                                                Actions
+                                                Intervention Status
                                               </TableHead>
                                             </TableRow>
                                           </TableHeader>
@@ -795,7 +822,10 @@ export async function TopChannels({
                                                     %
                                                   </TableCell>
                                                   <TableCell>
-                                                    <StudentActionDropdown student={student} latestResult={getMergedLatestResultForStudent(student.sap_id)} />
+                                                    <div className="flex flex-wrap items-center gap-2">
+                                                      <InterventionStatusBadge status={getLatestInterventionStatusForStudent(student.sap_id)} />
+                                                      <StudentActionDropdown student={student} latestResult={null} />
+                                                    </div>
                                                   </TableCell>
                                                 </TableRow>
                                               );
@@ -862,10 +892,13 @@ export async function TopChannels({
                 0,
               ) / courseStudents.length;
             const courseAlertsTeacher = getAlertCounts(courseStudents);
+            const teacherCourseId = `teacher-course-${courseId}`;
 
             return (
               <details
                 key={courseId}
+                data-section-id={teacherCourseId}
+                open={expandedIds.includes(teacherCourseId)}
                 className="group rounded-md border border-stroke bg-gray-50 dark:border-dark-3 dark:bg-dark-2"
               >
                 <summary className="flex cursor-pointer items-center justify-between gap-4 px-4 py-3">
@@ -915,8 +948,8 @@ export async function TopChannels({
                 </summary>
                 <div className="border-t border-stroke bg-white px-2 py-3 dark:border-dark-3 dark:bg-gray-dark">
                   <Table>
-                    <TableHeader>
-                      <TableRow className="border-none uppercase [&>th]:text-center">
+                    <TableHeader className="sticky top-0 z-10 border-b border-stroke bg-white dark:bg-gray-dark dark:border-dark-3 [&>tr]:border-stroke dark:[&>tr]:border-dark-3">
+                      <TableRow className="border-none uppercase [&>th]:text-center [&>th]:bg-white [&>th]:dark:bg-gray-dark">
                         <TableHead className="min-w-[140px] !text-left">
                           Name
                         </TableHead>
@@ -936,7 +969,7 @@ export async function TopChannels({
 
 
                         <TableHead className="min-w-[80px] !text-left">
-                          Actions
+                          Intervention Status
                         </TableHead>
                       </TableRow>
                     </TableHeader>
@@ -1013,7 +1046,10 @@ export async function TopChannels({
                               %
                             </TableCell>
                             <TableCell>
-                              <StudentActionDropdown student={student} latestResult={getMergedLatestResultForStudent(student.sap_id)} />
+                              <div className="flex flex-wrap items-center gap-2">
+                                <InterventionStatusBadge status={getLatestInterventionStatusForStudent(student.sap_id)} />
+                                <StudentActionDropdown student={student} latestResult={null} />
+                              </div>
                             </TableCell>
                           </TableRow>
                         );
