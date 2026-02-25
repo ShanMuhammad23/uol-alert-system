@@ -30,7 +30,43 @@ type PropsType = {
   masterFilter?: MasterFilterParams;
   gpaFilters?: AlertDimensionFilter[];
   attendanceFilters?: AlertDimensionFilter[];
+  interventionFilters?: string[];
 };
+
+function applyInterventionFilters(
+  students: Student[],
+  interventionFilters: string[] | undefined,
+): Student[] {
+  if (!interventionFilters || interventionFilters.length === 0) {
+    return students;
+  }
+
+  return students.filter((student) => {
+    const isGoodStudent =
+      student.gpa.alert_level == null &&
+      student.attendance.alert_level == null;
+    if (isGoodStudent) return false;
+
+    const latestStatus = getLatestInterventionStatusForStudent(student.sap_id);
+
+    const wantsNotStarted = interventionFilters.includes("not_started");
+    const wantsInitiated = interventionFilters.includes("initiated");
+    const wantsInProgress = interventionFilters.includes("in_progress");
+    const wantsReferred = interventionFilters.includes("referred");
+    const wantsResolved = interventionFilters.includes("resolved");
+
+    if (!latestStatus) {
+      return wantsNotStarted;
+    }
+
+    if (wantsInitiated && latestStatus === "initiated") return true;
+    if (wantsInProgress && latestStatus === "in-progress") return true;
+    if (wantsReferred && latestStatus === "referred") return true;
+    if (wantsResolved && latestStatus === "resolved") return true;
+
+    return false;
+  });
+}
 
 // Helper function to extract program prefix from course ID (e.g., "CS101" -> "CS")
 function getProgramFromCourse(courseId: string): string {
@@ -80,6 +116,233 @@ function groupStudentsForDean(
   }
 
   return result;
+}
+
+export async function TopChannelsTableView({
+  className,
+  returnToUrl = "/",
+  selectedAlert = "all",
+  user,
+  masterFilter,
+  gpaFilters,
+  attendanceFilters,
+  interventionFilters = [],
+}: PropsType) {
+  const { students: initialStudents } = await getStudentsByAlert(
+    selectedAlert,
+    { page: 1, pageSize: 100000 },
+    user,
+    masterFilter,
+    gpaFilters,
+    attendanceFilters,
+  );
+  const students = applyInterventionFilters(initialStudents, interventionFilters);
+
+  const data = await getFullData();
+  const deptById = new Map(data.departments.map((d) => [d.id, d]));
+  const courseById = new Map(data.courses.map((c) => [c.id, c]));
+  const teachers = data.users.filter(
+    (u) => u.role === "teacher" && u.course_ids && u.course_ids.length > 0,
+  );
+  const courseIdToInstructorNames = new Map<string, string>();
+  for (const teacher of teachers) {
+    for (const cid of teacher.course_ids ?? []) {
+      const existing = courseIdToInstructorNames.get(cid);
+      courseIdToInstructorNames.set(
+        cid,
+        existing ? `${existing}, ${teacher.name}` : teacher.name,
+      );
+    }
+  }
+
+  return (
+    <div
+      className={cn(
+        "grid rounded-[10px] bg-white px-7.5 pb-4 pt-7.5 shadow-1 dark:bg-gray-dark dark:shadow-card mb-12 overflow-x-auto",
+        className,
+      )}
+    >
+      
+      {students.length === 0 ? (
+        <div className="mt-6 rounded-md border border-dashed border-stroke py-8 text-center text-dark-6 dark:border-dark-3">
+          No students match this filter.
+        </div>
+      ) : (
+        <div className="mt-4">
+          <Table>
+            <TableHeader className="sticky top-0 z-10 border-b border-stroke bg-white dark:bg-gray-dark dark:border-dark-3 [&>tr]:border-stroke dark:[&>tr]:border-dark-3">
+              <TableRow className="border-none uppercase [&>th]:text-center [&>th]:bg-white [&>th]:dark:bg-gray-dark">
+                <TableHead className="min-w-[160px] !text-left">
+                  Name - SAPID
+                </TableHead>
+                {/* <TableHead className="min-w-[100px] !text-left">
+                  SAP ID
+                </TableHead> */}
+                <TableHead className="min-w-[140px] !text-left">
+                  Department
+                </TableHead>
+                <TableHead className="min-w-[80px] !text-left">
+                  Program
+                </TableHead>
+                {/* <TableHead className="min-w-[80px] !text-left">
+                  Course
+                </TableHead> */}
+                <TableHead className="min-w-[160px] !text-left">
+                  Course Name
+                </TableHead>
+                <TableHead className="min-w-[160px] !text-left">
+                  Instructor
+                </TableHead>
+                <TableHead className="text-center">
+                  Classes Held
+                </TableHead>
+                <TableHead className="text-center">
+                  Present
+                </TableHead>
+                <TableHead className="text-center">
+                  Absent
+                </TableHead>
+                <TableHead className="text-center">
+                  Attendance %
+                </TableHead>
+                <TableHead className="text-center">
+                  GPA
+                </TableHead>
+                <TableHead className="min-w-[120px] !text-center">
+                  Intervention Status
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {students.map((student) => {
+                const dept = deptById.get(student.department_id);
+                const course = courseById.get(student.course_id);
+                const programId = getProgramFromCourse(student.course_id);
+                const instructorNames =
+                  courseIdToInstructorNames.get(student.course_id) ?? "—";
+                const absent =
+                  student.attendance.total_classes_held -
+                  student.attendance.classes_attended;
+                const trendSymbol =
+                  student.gpa.trend === "up"
+                    ? "↗"
+                    : student.gpa.trend === "down"
+                      ? "↘"
+                      : "→";
+                const gpaColor =
+                  student.gpa.alert_level === "critical"
+                    ? "text-red font-semibold"
+                    : student.gpa.alert_level === "warning"
+                      ? "text-amber-600 dark:text-amber-400 font-semibold"
+                      : "text-dark dark:text-white";
+                const attColor =
+                  student.attendance.alert_level === "critical"
+                    ? "text-red font-semibold"
+                    : student.attendance.alert_level === "warning"
+                      ? "text-amber-600 dark:text-amber-400 font-semibold"
+                      : "text-dark dark:text-white";
+
+                return (
+                  <TableRow
+                    key={student.sap_id}
+                    className="text-center text-base font-medium text-dark dark:text-white"
+                  >
+                    <TableCell className="!text-left font-medium">
+                      {returnToUrl ? (
+                        <StudentProfileLink
+                          sapId={student.sap_id}
+                          returnToUrl={returnToUrl}
+                          className="inline-flex items-center gap-2 text-green-500 hover:bg-gray-100 hover:text-dark dark:text-dark-5 dark:hover:bg-dark-3 dark:hover:text-white rounded-md p-2 -m-2"
+                          title="View profile"
+                        >
+                          {student.name}
+                        </StudentProfileLink>
+                      ) : (
+                        student.name
+                      )}
+                      <p className="text-xs text-dark-6 dark:text-dark-5"> SAP ID: {student.sap_id}</p>
+                    </TableCell>
+                    {/* <TableCell className="!text-left text-dark-6">
+                    
+                    </TableCell> */}
+                    <TableCell className="!text-left">
+                      {dept?.name ?? "—"}
+                    </TableCell>
+                    <TableCell className="!text-left">
+                      {programId}
+                    </TableCell>
+                    <TableCell className="!text-left">
+                      
+                      {student.course_id}- {course?.name ?? "—"}
+                    </TableCell>
+                    {/* <TableCell className="!text-left">
+                      {course?.name ?? "—"}
+                    </TableCell> */}
+                    <TableCell className="!text-left">
+                      {instructorNames}
+                    </TableCell>
+                    <TableCell>
+                      {student.attendance.total_classes_held}
+                    </TableCell>
+                    <TableCell>
+                      {student.attendance.classes_attended}
+                    </TableCell>
+                    <TableCell>{absent}</TableCell>
+                    <TableCell className={cn(attColor)}>
+                      <div className="flex flex-col gap-1">
+                        <p>
+
+                      {student.attendance.attendance_percentage.toFixed(1)}%
+                        </p>
+                        <p className="text-xs text-dark-6 dark:text-dark-5">
+                          Avg:
+                        {student.attendance.class_average_attendance.toFixed(1)}%
+                        </p>
+                      </div>
+                    </TableCell>
+                    <TableCell className={cn(gpaColor)}>
+                      {student.gpa.current}
+                      <span
+                        className="ml-1 text-dark-6"
+                        title={student.gpa.trend}
+                      >
+                        {trendSymbol}
+                      </span>
+                      {student.gpa.change !== 0 && (
+                        <span
+                          className={cn(
+                            "ml-1 text-xs",
+                            student.gpa.change < 0 ? "text-red" : "text-green",
+                          )}
+                        >
+                          ({student.gpa.change > 0 ? "+" : ""}
+                          {student.gpa.change})
+                        </span>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex flex-wrap items-center justify-center gap-2">
+                        <InterventionStatusBadge
+                          status={getLatestInterventionStatusForStudent(
+                            student.sap_id,
+                          )}
+                          goodStanding={
+                            student.gpa.alert_level == null &&
+                            student.attendance.alert_level == null
+                          }
+                        />
+                       
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+    </div>
+  );
 }
 
 // Group students by program -> course (for HoD; already scoped to department(s))
@@ -149,8 +412,9 @@ export async function TopChannels({
   masterFilter,
   gpaFilters,
   attendanceFilters,
+  interventionFilters = [],
 }: PropsType) {
-  const { students } = await getStudentsByAlert(
+  const { students: initialStudents } = await getStudentsByAlert(
     selectedAlert,
     { page: 1, pageSize: 100000 },
     user,
@@ -158,11 +422,27 @@ export async function TopChannels({
     gpaFilters,
     attendanceFilters,
   );
+  const students = applyInterventionFilters(initialStudents, interventionFilters);
 
   // For deans, show nested structure: Department -> Program -> Course -> Students
   if (user?.role === "dean") {
     const data = await getFullData();
     const grouped = groupStudentsForDean(students, data.departments, data.courses);
+
+    // Map each course to one or more instructor names (for header display)
+    const teachers = data.users.filter(
+      (u) => u.role === "teacher" && u.course_ids && u.course_ids.length > 0,
+    );
+    const courseIdToInstructorNames = new Map<string, string>();
+    for (const teacher of teachers) {
+      for (const cid of teacher.course_ids ?? []) {
+        const existing = courseIdToInstructorNames.get(cid);
+        courseIdToInstructorNames.set(
+          cid,
+          existing ? `${existing}, ${teacher.name}` : teacher.name,
+        );
+      }
+    }
 
     // Sort departments by name
     const sortedDepartments = data.departments
@@ -309,6 +589,12 @@ export async function TopChannels({
                                                 ({course.name})
                                               </span>
                                             )}
+                                            {courseIdToInstructorNames.get(courseId) && (
+                                              <span className="ml-2 text-xs text-dark-6 dark:text-dark-5">
+                                                – Instructor:{" "}
+                                                {courseIdToInstructorNames.get(courseId)}
+                                              </span>
+                                            )}
                                           </span>
                                           <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-dark-6 dark:text-dark-5">
                                             <span>
@@ -369,7 +655,7 @@ export async function TopChannels({
                                                 Attendance %
                                               </TableHead>
                                               <TableHead className="text-center">GPA</TableHead>
-                                              <TableHead className="min-w-[80px] !text-left">
+                                              <TableHead className="min-w-[80px] !text-center">
                                                 Intervention Status
                                               </TableHead>
                                             </TableRow>
@@ -469,8 +755,10 @@ export async function TopChannels({
                                                   </TableCell>
                                                   <TableCell>
                                                     <div className="flex flex-wrap items-center gap-2">
-                                                      <InterventionStatusBadge status={getLatestInterventionStatusForStudent(student.sap_id)} />
-                                                      <StudentActionDropdown student={student} latestResult={null} />
+                                                      <InterventionStatusBadge
+                                                        status={getLatestInterventionStatusForStudent(student.sap_id)}
+                                                        goodStanding={student.gpa.alert_level == null && student.attendance.alert_level == null}
+                                                      />
                                                     </div>
                                                   </TableCell>
                                                 </TableRow>
@@ -524,9 +812,7 @@ export async function TopChannels({
           className,
         )}
       >
-        <h2 className="mb-4 text-body-2xlg font-bold text-dark dark:text-white">
-          Students by alert
-        </h2>
+      
         {students.length === 0 ? (
           <div className="mt-6 rounded-md border border-dashed border-stroke py-8 text-center text-dark-6 dark:border-dark-3">
             No students match this filter.
@@ -565,16 +851,6 @@ export async function TopChannels({
                           </span>
                         </span>
                         <span>
-                          GPA alerts:{" "}
-                          <span className="font-semibold text-amber-600 dark:text-amber-400">
-                            {programAlerts.gpaYellow}
-                          </span>
-                          {" | "}
-                          <span className="font-semibold text-red">
-                            {programAlerts.gpaRed}
-                          </span>
-                        </span>
-                        <span>
                           Attendance alerts:{" "}
                           <span className="font-semibold text-amber-600 dark:text-amber-400">
                             {programAlerts.attYellow}
@@ -582,6 +858,16 @@ export async function TopChannels({
                           {" | "}
                           <span className="font-semibold text-red">
                             {programAlerts.attRed}
+                          </span>
+                        </span>
+                        <span>
+                          GPA alerts:{" "}
+                          <span className="font-semibold text-amber-600 dark:text-amber-400">
+                            {programAlerts.gpaYellow}
+                          </span>
+                          {" | "}
+                          <span className="font-semibold text-red">
+                            {programAlerts.gpaRed}
                           </span>
                         </span>
                       </div>
@@ -625,16 +911,6 @@ export async function TopChannels({
                                     </span>
                                   </span>
                                   <span>
-                                    GPA alerts:{" "}
-                                    <span className="font-semibold text-amber-600 dark:text-amber-400">
-                                      {instructorAlerts.gpaYellow}
-                                    </span>
-                                    {" | "}
-                                    <span className="font-semibold text-red">
-                                      {instructorAlerts.gpaRed}
-                                    </span>
-                                  </span>
-                                  <span>
                                     Attendance alerts:{" "}
                                     <span className="font-semibold text-amber-600 dark:text-amber-400">
                                       {instructorAlerts.attYellow}
@@ -642,6 +918,16 @@ export async function TopChannels({
                                     {" | "}
                                     <span className="font-semibold text-red">
                                       {instructorAlerts.attRed}
+                                    </span>
+                                  </span>
+                                  <span>
+                                    GPA alerts:{" "}
+                                    <span className="font-semibold text-amber-600 dark:text-amber-400">
+                                      {instructorAlerts.gpaYellow}
+                                    </span>
+                                    {" | "}
+                                    <span className="font-semibold text-red">
+                                      {instructorAlerts.gpaRed}
                                     </span>
                                   </span>
                                 </div>
@@ -687,6 +973,9 @@ export async function TopChannels({
                                                 ({course.name})
                                               </span>
                                             )}
+                                            <span className="ml-2 text-xs text-dark-6 dark:text-dark-5">
+                                              – Instructor: {getInstructorName(instructorId)}
+                                            </span>
                                           </span>
                                           <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-dark-6 dark:text-dark-5">
                                             <span>
@@ -702,16 +991,6 @@ export async function TopChannels({
                                               </span>
                                             </span>
                                             <span>
-                                              GPA alerts:{" "}
-                                              <span className="font-semibold text-amber-600 dark:text-amber-400">
-                                                {courseAlertsHod.gpaYellow}
-                                              </span>
-                                              {" | "}
-                                              <span className="font-semibold text-red">
-                                                {courseAlertsHod.gpaRed}
-                                              </span>
-                                            </span>
-                                            <span>
                                               Attendance alerts:{" "}
                                               <span className="font-semibold text-amber-600 dark:text-amber-400">
                                                 {courseAlertsHod.attYellow}
@@ -719,6 +998,16 @@ export async function TopChannels({
                                               {" | "}
                                               <span className="font-semibold text-red">
                                                 {courseAlertsHod.attRed}
+                                              </span>
+                                            </span>
+                                            <span>
+                                              GPA alerts:{" "}
+                                              <span className="font-semibold text-amber-600 dark:text-amber-400">
+                                                {courseAlertsHod.gpaYellow}
+                                              </span>
+                                              {" | "}
+                                              <span className="font-semibold text-red">
+                                                {courseAlertsHod.gpaRed}
                                               </span>
                                             </span>
                                           </div>
@@ -823,8 +1112,11 @@ export async function TopChannels({
                                                   </TableCell>
                                                   <TableCell>
                                                     <div className="flex flex-wrap items-center gap-2">
-                                                      <InterventionStatusBadge status={getLatestInterventionStatusForStudent(student.sap_id)} />
-                                                      <StudentActionDropdown student={student} latestResult={null} />
+                                                      <InterventionStatusBadge
+                                                        status={getLatestInterventionStatusForStudent(student.sap_id)}
+                                                        goodStanding={student.gpa.alert_level == null && student.attendance.alert_level == null}
+                                                      />
+                                                     
                                                     </div>
                                                   </TableCell>
                                                 </TableRow>
@@ -874,9 +1166,7 @@ export async function TopChannels({
         className,
       )}
     >
-      <h2 className="mb-4 text-body-2xlg font-bold text-dark dark:text-white">
-        Students by alert
-      </h2>
+      
       {students.length === 0 ? (
         <div className="mt-6 rounded-md border border-dashed border-stroke py-8 text-center text-dark-6 dark:border-dark-3">
           No students match this filter.
@@ -906,6 +1196,11 @@ export async function TopChannels({
                     <span className="text-sm font-semibold text-dark dark:text-white">
                       Course:{" "}
                       <span className="font-bold text-primary">{courseId}</span>
+                      {user?.name && (
+                        <span className="text-sm font-semibold text-dark dark:text-white">
+                          – Instructor: {user.name}
+                        </span>
+                      )}
                     </span>
                     <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-dark-6 dark:text-dark-5">
                       <span>
@@ -921,16 +1216,6 @@ export async function TopChannels({
                         </span>
                       </span>
                       <span>
-                        GPA alerts:{" "}
-                        <span className="font-semibold text-amber-600 dark:text-amber-400">
-                          {courseAlertsTeacher.gpaYellow}
-                        </span>
-                        {" | "}
-                        <span className="font-semibold text-red">
-                          {courseAlertsTeacher.gpaRed}
-                        </span>
-                      </span>
-                      <span>
                         Attendance alerts:{" "}
                         <span className="font-semibold text-amber-600 dark:text-amber-400">
                           {courseAlertsTeacher.attYellow}
@@ -938,6 +1223,16 @@ export async function TopChannels({
                         {" | "}
                         <span className="font-semibold text-red">
                           {courseAlertsTeacher.attRed}
+                        </span>
+                      </span>
+                      <span>
+                        GPA alerts:{" "}
+                        <span className="font-semibold text-amber-600 dark:text-amber-400">
+                          {courseAlertsTeacher.gpaYellow}
+                        </span>
+                        {" | "}
+                        <span className="font-semibold text-red">
+                          {courseAlertsTeacher.gpaRed}
                         </span>
                       </span>
                     </div>
@@ -1047,7 +1342,10 @@ export async function TopChannels({
                             </TableCell>
                             <TableCell>
                               <div className="flex flex-wrap items-center gap-2">
-                                <InterventionStatusBadge status={getLatestInterventionStatusForStudent(student.sap_id)} />
+                                <InterventionStatusBadge
+                                                        status={getLatestInterventionStatusForStudent(student.sap_id)}
+                                                        goodStanding={student.gpa.alert_level == null && student.attendance.alert_level == null}
+                                                      />
                                 <StudentActionDropdown student={student} latestResult={null} />
                               </div>
                             </TableCell>

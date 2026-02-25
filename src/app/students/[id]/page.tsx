@@ -182,7 +182,7 @@ function ProgressBar({
       {comparison !== undefined && (
         <div className="flex items-center justify-between text-xs text-gray-500">
           <span>Class Average</span>
-          <span>{(value - comparison).toFixed(1)}% difference</span>
+          <span>{(value - comparison).toFixed(1)}% </span>
         </div>
       )}
     </div>
@@ -208,7 +208,7 @@ export default async function StudentPage({ params, searchParams }: PropsType) {
   const gpaDiff = student.gpa.current - (report.gpa_comparison.class_average_current || 0);
 
   return (
-    <div className="w-full space-y-6">
+    <div className="w-full space-y-6 mt-4">
       {/* Back to list / Dashboard */}
       <div className="flex items-center gap-2">
         <Link

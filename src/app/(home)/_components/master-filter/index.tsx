@@ -3,16 +3,19 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useClickOutside } from "@/hooks/use-click-outside";
+import { saveScrollBeforeFilterNav } from "../FilterScrollPreserve";
 import { cn } from "@/lib/utils";
 import type { MasterFilterParams, MasterFilterOptions, AlertDimensionFilter } from "../../fetch";
 
 const GPA_ATTENDANCE_OPTIONS: { value: AlertDimensionFilter; label: string }[] = [
+  { value: "all", label: "All" },
   { value: "red", label: "Red alert" },
   { value: "yellow", label: "Yellow alert" },
   { value: "good", label: "Good standing" },
 ];
 
 const INTERVENTION_STATUS_OPTIONS: { value: string; label: string }[] = [
+  { value: "all", label: "All" },
   { value: "not_started", label: "Not Started" },
   { value: "initiated", label: "Initiated" },
   { value: "in_progress", label: "In-Progress" },
@@ -68,7 +71,7 @@ function FilterMultiSelect({
     selected.length > 0 ? `${label} (${selected.length})` : label;
 
   return (
-    <div className="flex flex-col gap-1.5 relative" data-testid={testId}>
+    <div className="flex flex-col gap-1.5 relative mb-8" data-testid={testId}>
       <label className="text-body-sm font-medium text-dark dark:text-white">
         {labelWithCount}
       </label>
@@ -167,7 +170,10 @@ export function MasterFilter({
     return qs ? `/?${qs}` : "/";
   };
 
-  const navigate = (url: string) => router.push(url, { scroll: false });
+  const navigate = (url: string) => {
+    saveScrollBeforeFilterNav();
+    router.replace(url, { scroll: false });
+  };
 
   // When parent filter changes, clear child selections so options stay in sync
   const handleDepartment = (values: string[]) =>

@@ -2,6 +2,7 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, type ReactNode } from "react";
+import { saveScrollBeforeFilterNav } from "./FilterScrollPreserve";
 
 type Props = { children: ReactNode };
 
@@ -28,7 +29,8 @@ export function ExpandableListUrlSync({ children }: Props) {
       const nextParams = new URLSearchParams(searchParams);
       if (next.length) nextParams.set("expanded", next.join(","));
       else nextParams.delete("expanded");
-      router.push(`/?${nextParams.toString()}`, { scroll: false });
+      saveScrollBeforeFilterNav();
+      router.replace(`/?${nextParams.toString()}`, { scroll: false });
     },
     [router, searchParams]
   );

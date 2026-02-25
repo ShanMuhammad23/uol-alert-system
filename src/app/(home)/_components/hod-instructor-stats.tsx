@@ -1,36 +1,35 @@
 import Link from "next/link";
-import { getDeanInstructorStats } from "../fetch";
+import { getHodInstructorStats } from "../fetch";
 import type { AppUser } from "../fetch";
 import { cn } from "@/lib/utils";
 
 type PropsType = {
   user: AppUser | null;
-  selectedDepartmentId?: string;
+  selectedProgramId?: string;
   selectedInstructorId?: string;
 };
 
 function buildInstructorUrl(
   instructorId: string,
-  selectedDepartmentId?: string
+  departmentIds: string[],
+  programId?: string
 ): string {
   const params = new URLSearchParams({ selected_alert: "all", instructor: instructorId });
-  if (selectedDepartmentId) params.set("department", selectedDepartmentId);
+  if (departmentIds.length) params.set("department", departmentIds.join(","));
+  if (programId) params.set("program", programId);
   return `/?${params.toString()}`;
 }
 
-export async function DeanInstructorStats({
+export async function HodInstructorStats({
   user,
-  selectedDepartmentId,
+  selectedProgramId,
   selectedInstructorId,
 }: PropsType) {
-  if (!user || user.role !== "dean") return null;
+  if (!user || user.role !== "hod" || !user.department_ids?.length) return null;
 
-  const stats = await getDeanInstructorStats(user.faculty_id ?? null, {
-    ...(selectedInstructorId
-      ? { instructorIds: [selectedInstructorId] }
-      : selectedDepartmentId
-        ? { departmentIds: [selectedDepartmentId] }
-        : {}),
+  const stats = await getHodInstructorStats(user.department_ids, {
+    ...(selectedInstructorId ? { instructorIds: [selectedInstructorId] } : {}),
+    ...(selectedProgramId ? { programIds: [selectedProgramId] } : {}),
   });
   if (!stats.length) return null;
 
@@ -39,7 +38,7 @@ export async function DeanInstructorStats({
       {stats.map((i) => (
         <Link
           key={i.instructorId}
-          href={buildInstructorUrl(i.instructorId, selectedDepartmentId)}
+          href={buildInstructorUrl(i.instructorId, user.department_ids ?? [], selectedProgramId)}
           className={cn(
             "inline-flex bg-white flex-col rounded-lg border border-stroke px-4 py-3 shadow-1 dark:bg-gray-dark transition hover:border-primary/50 hover:shadow dark:border-stroke-dark dark:hover:border-primary/50",
             "min-w-[160px]"

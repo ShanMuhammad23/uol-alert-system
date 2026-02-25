@@ -3,6 +3,7 @@ import path from "path";
 import { getStudentsForRole, getCoursesForRole, getDepartmentsForRole } from "@/lib/role";
 import type { User } from "@/lib/role";
 import { getDemoUserEmail } from "@/lib/auth";
+import { getInterventionStatsForStudents } from "@/data/intervention-store";
 
 const DATA_FILE = "data.json";
 
@@ -467,6 +468,103 @@ export async function getDeanInstructorStats(
   });
 }
 
+export type ProgramStats = {
+  programId: string;
+  total: number;
+  yellowGpa: number;
+  redGpa: number;
+  yellowAttendance: number;
+  redAttendance: number;
+};
+
+/** Stats per program for HoD (departments they head). */
+export async function getHodProgramStats(
+  departmentIds: string[]
+): Promise<ProgramStats[]> {
+  if (!departmentIds.length) return [];
+  const data = await getDataJson();
+  const deptSet = new Set(departmentIds);
+  const students = data.students.filter((s) => deptSet.has(s.department_id));
+  const byProgram = new Map<string, Student[]>();
+  for (const s of students) {
+    const programId = getProgramFromCourse(s.course_id);
+    if (!byProgram.has(programId)) byProgram.set(programId, []);
+    byProgram.get(programId)!.push(s);
+  }
+  const entries = Array.from(byProgram.entries()).sort(([a], [b]) => a.localeCompare(b));
+  return entries.map(([programId, progStudents]) => {
+    let yellowGpa = 0, redGpa = 0, yellowAttendance = 0, redAttendance = 0;
+    for (const s of progStudents) {
+      if (s.gpa.alert_level === "critical") redGpa += 1;
+      if (s.gpa.alert_level === "warning") yellowGpa += 1;
+      if (s.attendance.alert_level === "critical") redAttendance += 1;
+      if (s.attendance.alert_level === "warning") yellowAttendance += 1;
+    }
+    return {
+      programId,
+      total: progStudents.length,
+      yellowGpa,
+      redGpa,
+      yellowAttendance,
+      redAttendance,
+    };
+  });
+}
+
+/** Instructor stats for HoD: teachers in the given department IDs. */
+export async function getHodInstructorStats(
+  departmentIds: string[],
+  options?: { instructorIds?: string[]; programIds?: string[] }
+): Promise<InstructorStats[]> {
+  if (!departmentIds.length) return [];
+  const data = await getDataJson();
+  const deptSet = new Set(departmentIds);
+
+  let teachers = data.users.filter(
+    (u) =>
+      u.role === "teacher" &&
+      u.department_id &&
+      deptSet.has(u.department_id) &&
+      u.course_ids?.length
+  );
+
+  if (options?.instructorIds?.length) {
+    const set = new Set(options.instructorIds);
+    teachers = teachers.filter((t) => set.has(t.id));
+  }
+  if (options?.programIds?.length) {
+    const programSet = new Set(options.programIds);
+    teachers = teachers.filter((t) => {
+      const courseIds = t.course_ids ?? [];
+      return courseIds.some((cid) => programSet.has(getProgramFromCourse(cid)));
+    });
+  }
+
+  return teachers.map((teacher) => {
+    const courseIds = new Set(teacher.course_ids ?? []);
+    const students = data.students.filter((s) => courseIds.has(s.course_id));
+    let yellowGpa = 0,
+      redGpa = 0,
+      yellowAttendance = 0,
+      redAttendance = 0;
+    for (const s of students) {
+      if (s.gpa.alert_level === "critical") redGpa += 1;
+      if (s.gpa.alert_level === "warning") yellowGpa += 1;
+      if (s.attendance.alert_level === "critical") redAttendance += 1;
+      if (s.attendance.alert_level === "warning") yellowAttendance += 1;
+    }
+    return {
+      instructorId: teacher.id,
+      instructorName: teacher.name,
+      total: students.length,
+      yellowGpa,
+      redGpa,
+      yellowAttendance,
+      redAttendance,
+    };
+  });
+}
+
 export async function getCurrentUser(): Promise<AppUser | null> {
   const email = await getDemoUserEmail();
   if (!email) return null;
@@ -540,6 +638,55 @@ export async function getStudentsByAlert(
   const students = filtered.slice(start, start + pageSize);
 
   return { students, total, page, pageSize, totalPages };
+}
+
+export type InterventionChartDataPoint = { x: string; y: number };
+
+export type InterventionChartResult = {
+  data: InterventionChartDataPoint[];
+  totalAlertCount: number;
+  statusColors: Record<string, string>;
+};
+
+/** Intervention stats for the campaign visitors chart: counts by status for the logged-in user's alert students. Sum of counts = totalAlertCount. */
+export async function getInterventionChartData(
+  user?: AppUser | null,
+  masterFilter?: MasterFilterParams,
+  gpaFilters?: AlertDimensionFilter[],
+  attendanceFilters?: AlertDimensionFilter[]
+): Promise<InterventionChartResult> {
+  const result = await getStudentsByAlert(
+    "early_alert",
+    { page: 1, pageSize: 100000 },
+    user,
+    masterFilter,
+    gpaFilters,
+    attendanceFilters
+  );
+  const sapIds = result.students.map((s) => s.sap_id);
+  const stats = getInterventionStatsForStudents(sapIds);
+
+  const statusColors: Record<string, string> = {
+    "Not Started": "#DE2649",
+    Initiated: "#B5B126",
+    "In-Progress": "#DBBE0F",
+    Referred: "#9C5A99",
+    Resolved: "#477061",
+  };
+
+  const data: InterventionChartDataPoint[] = [
+    { x: "Not Started", y: stats.notStarted },
+    { x: "Initiated", y: stats.initiated },
+    { x: "In-Progress", y: stats["in-progress"] },
+    { x: "Resolved", y: stats.resolved },
+    { x: "Referred", y: stats.referred },
+  ];
+
+  return {
+    data,
+    totalAlertCount: result.total,
+    statusColors,
+  };
 }
 
 export async function getStudentBySapId(sapId: string): Promise<Student | null> {

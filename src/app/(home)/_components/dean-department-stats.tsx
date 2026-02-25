@@ -6,6 +6,8 @@ import { cn } from "@/lib/utils";
 type PropsType = {
   user: AppUser | null;
   selectedDepartmentId?: string;
+  /** When set, these departments are shown as selected (bordered) from MasterFilter. All departments are still visible. */
+  masterFilterDepartmentIds?: string[];
 };
 
 function buildDepartmentUrl(departmentId: string): string {
@@ -15,6 +17,7 @@ function buildDepartmentUrl(departmentId: string): string {
 export async function DeanDepartmentStats({
   user,
   selectedDepartmentId,
+  masterFilterDepartmentIds,
 }: PropsType) {
   if (!user || user.role !== "dean") return null;
 
@@ -24,7 +27,10 @@ export async function DeanDepartmentStats({
   return (
     <div className="flex flex-wrap gap-2">
       {stats.map((d) => {
-        const isSelected = selectedDepartmentId === d.departmentId;
+        const isSelected =
+          (masterFilterDepartmentIds?.length
+            ? masterFilterDepartmentIds.includes(d.departmentId)
+            : selectedDepartmentId === d.departmentId);
         return (
         <Link
           key={d.departmentId}
@@ -33,7 +39,7 @@ export async function DeanDepartmentStats({
             "inline-flex bg-white flex-col rounded-lg border px-4 py-3 shadow-1 dark:bg-gray-dark transition hover:border-primary/50 hover:shadow dark:border-stroke-dark dark:hover:border-primary/50",
             "min-w-[160px]",
             isSelected
-              ? "border-primary bg-primary/10 ring-2 ring-primary/30 dark:bg-primary/15 dark:ring-primary/40"
+              ? "border-2 border-primary dark:border-primary"
               : "border-stroke"
           )}
         >

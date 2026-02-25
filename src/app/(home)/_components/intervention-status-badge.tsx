@@ -37,10 +37,23 @@ const INTERVENTION_STATUS_STYLES: Record<
 type Props = {
   /** Latest intervention status from store (e.g. initiated, in-progress) or null for Not Started. */
   status: string | null;
+  /** When true, student has no GPA/attendance alerts; show hyphen instead of status. */
+  goodStanding?: boolean;
   className?: string;
 };
 
-export function InterventionStatusBadge({ status, className }: Props) {
+export function InterventionStatusBadge({ status, goodStanding, className }: Props) {
+  if (goodStanding) {
+    return (
+      <span
+        className={cn("inline-flex items-center text-muted-foreground text-xs", className)}
+        title="Good standing"
+      >
+        –
+      </span>
+    );
+  }
+
   const key = status ?? "not_started";
   const style = INTERVENTION_STATUS_STYLES[key] ?? INTERVENTION_STATUS_STYLES.not_started;
 

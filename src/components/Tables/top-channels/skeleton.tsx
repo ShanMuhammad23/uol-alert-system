@@ -11,20 +11,19 @@ import {
 export function TopChannelsSkeleton() {
   return (
     <div className="rounded-[10px] bg-white px-7.5 pb-4 pt-7.5 shadow-1 dark:bg-gray-dark dark:shadow-card">
-      <h2 className="mb-5.5 text-body-2xlg font-bold text-dark dark:text-white">
-        Students by alert
-      </h2>
+  
 
       <Table>
         <TableHeader>
           <TableRow className="border-none uppercase [&>th]:text-center">
-            <TableHead className="!text-left">Name</TableHead>
-            <TableHead className="!text-left">Email</TableHead>
+            <TableHead className="!text-left">Name - SAPID</TableHead>
             <TableHead>Course</TableHead>
+            <TableHead>Classes Held</TableHead>
+            <TableHead>Classes Attended</TableHead>
+            <TableHead>Absent</TableHead>
+            <TableHead>Attendance Percentage</TableHead>
             <TableHead>GPA</TableHead>
-            <TableHead>Attendance</TableHead>
-            <TableHead>GPA Alert</TableHead>
-            <TableHead>Attendance Alert</TableHead>
+            <TableHead>Intervention Status</TableHead>
           </TableRow>
         </TableHeader>
 

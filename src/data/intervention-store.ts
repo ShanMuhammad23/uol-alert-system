@@ -62,6 +62,57 @@ export function getLatestInterventionStatusForStudent(
   return list.length > 0 ? list[0].status : null;
 }
 
+export type InterventionStatsCounts = {
+  notStarted: number;
+  initiated: number;
+  "in-progress": number;
+  referred: number;
+  resolved: number;
+};
+
+/**
+ * For a given set of student SAP IDs (e.g. all students in alert for the user),
+ * returns counts per intervention status. "Not Started" = in alert but no action taken.
+ * Sum of all counts equals sapIds.length.
+ */
+export function getInterventionStatsForStudents(
+  sapIds: string[]
+): InterventionStatsCounts {
+  const stored = readStore();
+  const latestBySapId = new Map<string, InterventionRecord>();
+  for (const r of stored) {
+    const existing = latestBySapId.get(r.student_sap_id);
+    if (
+      !existing ||
+      new Date(r.performed_at).getTime() > new Date(existing.performed_at).getTime()
+    ) {
+      latestBySapId.set(r.student_sap_id, r);
+    }
+  }
+  let notStarted = 0;
+  let initiated = 0;
+  let inProgress = 0;
+  let referred = 0;
+  let resolved = 0;
+  for (const sapId of sapIds) {
+    const record = latestBySapId.get(sapId);
+    const status = record?.status ?? null;
+    if (status === null) notStarted += 1;
+    else if (status === "initiated") initiated += 1;
+    else if (status === "in-progress") inProgress += 1;
+    else if (status === "referred") referred += 1;
+    else if (status === "resolved") resolved += 1;
+    else notStarted += 1;
+  }
+  return {
+    notStarted,
+    initiated,
+    "in-progress": inProgress,
+    referred,
+    resolved,
+  };
+}
+
 export function recordIntervention(
   studentSapId: string,
   data: {

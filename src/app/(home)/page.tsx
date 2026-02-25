@@ -1,7 +1,6 @@
-import { TopChannels } from "@/components/Tables/top-channels";
+import { TopChannels, TopChannelsTableView } from "@/components/Tables/top-channels";
 import { TopChannelsSkeleton } from "@/components/Tables/top-channels/skeleton";
 import { Suspense } from "react";
-import { OverviewChart } from "./_components/overview-chart";
 import { OverviewCardsGroup } from "./_components/overview-cards";
 import { OverviewCardsSkeleton } from "./_components/overview-cards/skeleton";
 import { getCurrentUser, getMasterFilterOptions } from "./fetch";
@@ -9,9 +8,15 @@ import type { MasterFilterParams, AlertDimensionFilter } from "./fetch";
 import { DeanDepartmentStats } from "./_components/dean-department-stats";
 import { DeanInstructorStats } from "./_components/dean-instructor-stats";
 import { DeanStatsCollapsible } from "./_components/dean-stats-collapsible";
+import { HodStatsCollapsible } from "./_components/hod-stats-collapsible";
+import { HodProgramStats } from "./_components/hod-program-stats";
+import { HodInstructorStats } from "./_components/hod-instructor-stats";
 import { MasterFilter } from "./_components/master-filter";
 import { CampaignVisitorsChart } from "@/components/Charts/campaign-visitors/chart";
+import { getInterventionChartData } from "./fetch";
 import { ExpandableListUrlSync } from "./_components/ExpandableListUrlSync";
+import { FilterScrollPreserve } from "./_components/FilterScrollPreserve";
+import { StudentsViewTabs } from "./_components/StudentsViewTabs";
 
 function parseMultiParam(
   value: string | string[] | undefined
@@ -32,6 +37,7 @@ type PropsType = {
     attendance_filter?: string;
     intervention_filter?: string | string[];
     expanded?: string;
+    view?: string;
   }>;
 };
 
@@ -62,6 +68,16 @@ export default async function Home({ searchParams }: PropsType) {
 
   const filterKey = [selectedAlert, ...departmentIds, ...programs, ...instructorIds, ...courseIds, params.gpa_filter, params.attendance_filter, params.intervention_filter].join("-");
   const filterOptions = await getMasterFilterOptions(user, masterFilter);
+  const interventionChart = await getInterventionChartData(
+    user,
+    masterFilter,
+    gpaFilters,
+    attendanceFilters
+  );
+
+  const viewMode = params.view === "nested" ? "nested" : "table";
+  const expandedParam = params.expanded;
+  const expandedIds = expandedParam ? expandedParam.split(",").map((s) => s.trim()).filter(Boolean) : [];
 
   // Build URL to restore filters (and later expanded state) when returning from student profile
   const returnToParams = new URLSearchParams();
@@ -73,14 +89,15 @@ export default async function Home({ searchParams }: PropsType) {
   if (gpaFilters.length) returnToParams.set("gpa_filter", gpaFilters.join(","));
   if (attendanceFilters.length) returnToParams.set("attendance_filter", attendanceFilters.join(","));
   if (interventionFilters.length) returnToParams.set("intervention_filter", interventionFilters.join(","));
-  const expandedParam = params.expanded;
   if (expandedParam) returnToParams.set("expanded", expandedParam);
+  if (viewMode === "nested") returnToParams.set("view", "nested");
   const returnToUrl = returnToParams.toString() ? `/?${returnToParams.toString()}` : "/";
-
-  const expandedIds = expandedParam ? expandedParam.split(",").map((s) => s.trim()).filter(Boolean) : [];
 
   return (
     <>
+      <Suspense fallback={null}>
+        <FilterScrollPreserve />
+      </Suspense>
       {/* Row 1: Overview cards + Charts in one row */}
       <div className="mt-4 grid grid-cols-12 gap-4 md:mt-6 bg-white dark:bg-gray-800 rounded-lg p-4 shadow-1">
         <div className="col-span-12 md:col-span-6">
@@ -96,26 +113,14 @@ export default async function Home({ searchParams }: PropsType) {
         </div>
         <div className=" col-span-12 md:col-span-6">
       <CampaignVisitorsChart
-            data={[
-              { x: "Not Started", y: 100 },
-              { x: "Initiated", y: 168 },
-              { x: "In-Progress", y: 385 },
-              { x: "Resolved", y: 298 },
-              { x: "Referred", y: 201 },
-            ]}
-            statusColors={{
-              "Not Started": "#DE2649",
-              "Initiated": "#B5B126",
-              "In-Progress": "#DBBE0F",
-              "Referred": "#9C5A99",
-              "Resolved": "#477061",
-            }}
+            data={interventionChart.data}
+            statusColors={interventionChart.statusColors}
           />
       </div>
       </div>
     
       
-      {/* Row 2: Dean department & instructor stats (collapsible, parent-child) */}
+      {/* Row 2: Dean department & instructor stats (collapsible); HoD programs & instructors (collapsible) */}
       <div className="mt-4 mb-4 grid grid-cols-12 gap-4">
         <div className="col-span-12">
           {user?.role === "dean" && (
@@ -125,12 +130,32 @@ export default async function Home({ searchParams }: PropsType) {
                 <DeanDepartmentStats
                   user={user}
                   selectedDepartmentId={departmentIds[0]}
+                  masterFilterDepartmentIds={departmentIds.length ? departmentIds : undefined}
                 />
               }
               instructorContent={
                 <DeanInstructorStats
                   user={user}
                   selectedDepartmentId={departmentIds[0]}
+                  selectedInstructorId={instructorIds[0]}
+                />
+              }
+            />
+          )}
+          {user?.role === "hod" && (
+            <HodStatsCollapsible
+              selectedProgramId={programs[0]}
+              programContent={
+                <HodProgramStats
+                  user={user}
+                  selectedProgramId={programs[0]}
+                  masterFilterProgramIds={programs.length ? programs : undefined}
+                />
+              }
+              instructorContent={
+                <HodInstructorStats
+                  user={user}
+                  selectedProgramId={programs[0]}
                   selectedInstructorId={instructorIds[0]}
                 />
               }
@@ -153,20 +178,40 @@ export default async function Home({ searchParams }: PropsType) {
         </div>
       </Suspense>
 
-      <div className="col-span-12">
-        <Suspense fallback={<TopChannelsSkeleton />} key={filterKey}>
-          <ExpandableListUrlSync>
-            <TopChannels
+      <div className="col-span-12 mb-12">
+        <Suspense fallback={null}>
+          <div className="mb-4">
+            <StudentsViewTabs currentView={viewMode} />
+          </div>
+        </Suspense>
+        {viewMode === "table" ? (
+          <Suspense fallback={<TopChannelsSkeleton />} key={`${filterKey}-table`}>
+            <TopChannelsTableView
               returnToUrl={returnToUrl}
-              expandedIds={expandedIds}
               selectedAlert={selectedAlert}
               user={user}
               masterFilter={masterFilter}
               gpaFilters={gpaFilters}
               attendanceFilters={attendanceFilters}
+              interventionFilters={interventionFilters}
             />
-          </ExpandableListUrlSync>
-        </Suspense>
+          </Suspense>
+        ) : (
+          <Suspense fallback={<TopChannelsSkeleton />} key={filterKey}>
+            <ExpandableListUrlSync>
+              <TopChannels
+                returnToUrl={returnToUrl}
+                expandedIds={expandedIds}
+                selectedAlert={selectedAlert}
+                user={user}
+                masterFilter={masterFilter}
+                gpaFilters={gpaFilters}
+                attendanceFilters={attendanceFilters}
+                interventionFilters={interventionFilters}
+              />
+            </ExpandableListUrlSync>
+          </Suspense>
+        )}
       </div>
     </>
   );
