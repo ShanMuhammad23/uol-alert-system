@@ -43,7 +43,7 @@ export async function CampaignVisitors({ className }: { className?: string }) {
         </div>
       </div>
 
-      <CampaignVisitorsChart data={data.chart} />
+      <CampaignVisitorsChart data={data.chart} title="Campaign Visitors" />
     </div>
   );
 }

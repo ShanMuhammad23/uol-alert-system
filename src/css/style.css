@@ -16,6 +16,11 @@ html::-webkit-scrollbar,
 body::-webkit-scrollbar {
   display: none;             /* Chrome, Safari, Opera */
 }
+:root {
+  --primary: #1f4a3d;
+  --secondary-color: #255a4a;
+  --tertiary-color: #1f4a3d;
+}
 @layer utilities {
   /* Chrome, Safari and Opera */
   .no-scrollbar::-webkit-scrollbar {

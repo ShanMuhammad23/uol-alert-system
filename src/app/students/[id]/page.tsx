@@ -213,7 +213,7 @@ export default async function StudentPage({ params, searchParams }: PropsType) {
       <div className="flex items-center gap-2">
         <Link
           href={returnToUrl}
-          className="inline-flex items-center gap-2 text-sm font-medium text-primary hover:underline"
+          className="inline-flex items-center gap-2 text-lg font-medium text-primary hover:underline"
         >
           <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -223,8 +223,8 @@ export default async function StudentPage({ params, searchParams }: PropsType) {
       </div>
 
       {/* Profile Hero Card */}
-      <div className="overflow-hidden rounded-2xl bg-white shadow-lg dark:bg-gray-dark">
-        <div className="relative bg-gradient-to-r from-blue-600 to-blue-800 px-6 py-8 sm:px-8">
+      <div className="overflow-hidden rounded-2xl bg-gradient-to-b from-[#1f4a3d] via-[#255a4a] to-[#1f4a3d] shadow-lg dark:bg-gray-dark">
+        <div className="relative px-6 py-8 sm:px-8">
           <div className="absolute inset-0 opacity-10">
             <div className="absolute -right-10 -top-10 h-40 w-40 rounded-full bg-white blur-3xl" />
             <div className="absolute -bottom-10 -left-10 h-40 w-40 rounded-full bg-white blur-3xl" />
@@ -258,7 +258,7 @@ export default async function StudentPage({ params, searchParams }: PropsType) {
             
             <div className="flex-1 text-white">
               <h1 className="text-2xl font-bold sm:text-3xl">{student.name}</h1>
-              <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-blue-100">
+              <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-white">
                 <span className="flex items-center gap-1.5">
                   <span className="text-xs opacity-70">SAP ID</span>
                   <span className="font-mono font-medium">{student.sap_id}</span>
@@ -446,15 +446,14 @@ export default async function StudentPage({ params, searchParams }: PropsType) {
 
             {report.gpa_comparison.history && report.gpa_comparison.history.length > 0 && (
               <div>
-                <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                  GPA Trend
-                </p>
+               
                 <div className="rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800/50">
                   <CampaignVisitorsChart
                     data={report.gpa_comparison.history.map((h) => ({
                       x: h.semester,
                       y: h.gpa,
                     }))}
+                    title="GPA Trend"
                   />
                 </div>
               </div>

@@ -9,6 +9,7 @@ type DataPoint = {
 };
 
 type PropsType = {
+  title: string;
   data: DataPoint[];
   /** Map each bar (by x-axis label / status) to a hex color. Bars not in the map use defaultColor. */
   statusColors?: Record<string, string>;
@@ -23,6 +24,7 @@ const Chart = dynamic(() => import("react-apexcharts"), {
 const DEFAULT_BAR_COLOR = "#94A3B8";
 
 export function CampaignVisitorsChart({
+  title,
   data,
   statusColors,
   defaultColor = DEFAULT_BAR_COLOR,
@@ -31,7 +33,14 @@ export function CampaignVisitorsChart({
 
   const options: ApexOptions = {
    
-  
+  title: {
+    text: title,
+    style: {
+      fontSize: "16px",
+      fontWeight: "bold",
+      color: "#000",
+    },
+  },
     colors,
     chart: {
       fontFamily: "Satoshi, sans-serif",

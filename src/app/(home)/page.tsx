@@ -115,13 +115,12 @@ export default async function Home({ searchParams }: PropsType) {
       <CampaignVisitorsChart
             data={interventionChart.data}
             statusColors={interventionChart.statusColors}
+            title="Outreach & Intervention Stats"
           />
       </div>
       </div>
     
-      
-      {/* Row 2: Dean department & instructor stats (collapsible); HoD programs & instructors (collapsible) */}
-      <div className="mt-4 mb-4 grid grid-cols-12 gap-4">
+            <div className="mt-4 mb-4 grid grid-cols-12 gap-4">
         <div className="col-span-12">
           {user?.role === "dean" && (
             <DeanStatsCollapsible
