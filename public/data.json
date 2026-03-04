@@ -37,8 +37,8 @@
   },
   "faculties": [
     {
-      "id": "FAC_ENG",
-      "name": "Faculty of Engineering & Technology"
+      "id": "50000172",
+      "name": "Faculty of Social Sciences"
     },
     {
       "id": "FAC_MGT",
@@ -353,11 +353,11 @@
     {
       "id": "USER_001",
       "sap_id": "900001",
-      "name": "Prof. Dr. Muhammad Ahmed",
+      "name": "Prof. Dr. Rabia Akhtar",
       "email": "dean@uol.edu.pk",
       "password": "demo123",
       "role": "dean",
-      "faculty_id": "FAC_ENG",
+      "faculty_id": "50000172",
       "department_id": null,
       "course_ids": null
     },

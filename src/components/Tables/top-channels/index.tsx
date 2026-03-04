@@ -8,6 +8,7 @@ import {
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import { getStudentsByAlert, getFullData } from "@/app/(home)/fetch";
+import { fetchMonitoringEntries } from "@/lib/sap-monitoring";
 import type {
   AppUser,
   Student,
@@ -17,9 +18,28 @@ import type {
   AlertDimensionFilter,
 } from "@/app/(home)/fetch";
 import { StudentActionDropdown } from "@/app/(home)/_components/student-action-dropdown";
-import { getLatestInterventionStatusForStudent } from "@/data/intervention-store";
+import { getLatestInterventionStatusMap } from "@/data/intervention-store";
 import { InterventionStatusBadge } from "@/app/(home)/_components/intervention-status-badge";
 import { StudentProfileLink } from "./StudentProfileLink";
+import { SortableTableHead, type SortKey, type SortOrder } from "./SortableTableHead";
+import { ClearSortButton } from "./ClearSortButton";
+
+export { TopChannelsTableClient } from "./TopChannelsTableClient";
+
+/** One enrollment record from public/enrollment_data.json */
+export type EnrollmentRecord = {
+  Name: string;
+  SapNo: string;
+  DeptName: string;
+  DeptCode?: string;
+  DegreeTitle: string;
+  DegreeCode?: string;
+  CrTitle: string;
+  CrCode: string;
+  Teacher: string | null;
+  Id?: string;
+  [key: string]: unknown;
+};
 
 type PropsType = {
   className?: string;
@@ -31,11 +51,34 @@ type PropsType = {
   gpaFilters?: AlertDimensionFilter[];
   attendanceFilters?: AlertDimensionFilter[];
   interventionFilters?: string[];
+  sortBy?: SortKey | null;
+  sortOrder?: SortOrder;
 };
+
+function sortStudents(
+  students: Student[],
+  sortBy: SortKey | null | undefined,
+  sortOrder: SortOrder
+): Student[] {
+  if (!sortBy) return students;
+  const copy = [...students];
+  const mult = sortOrder === "asc" ? 1 : -1;
+  if (sortBy === "attendance") {
+    copy.sort(
+      (a, b) =>
+        mult *
+        (a.attendance.attendance_percentage - b.attendance.attendance_percentage)
+    );
+  } else {
+    copy.sort((a, b) => mult * (a.gpa.current - b.gpa.current));
+  }
+  return copy;
+}
 
 function applyInterventionFilters(
   students: Student[],
   interventionFilters: string[] | undefined,
+  statusMap: Map<string, string | null>,
 ): Student[] {
   if (!interventionFilters || interventionFilters.length === 0) {
     return students;
@@ -47,7 +90,7 @@ function applyInterventionFilters(
       student.attendance.alert_level == null;
     if (isGoodStudent) return false;
 
-    const latestStatus = getLatestInterventionStatusForStudent(student.sap_id);
+    const latestStatus = statusMap.get(student.sap_id) ?? null;
 
     const wantsNotStarted = interventionFilters.includes("not_started");
     const wantsInitiated = interventionFilters.includes("initiated");
@@ -118,6 +161,24 @@ function groupStudentsForDean(
   return result;
 }
 
+/** Fetch enrollment data from public/enrollment_data.json */
+async function fetchEnrollmentData(): Promise<EnrollmentRecord[]> {
+  if (typeof window === "undefined") {
+    const fs = await import("fs/promises");
+    const path = await import("path");
+    const filePath = path.join(process.cwd(), "public", "enrollment_data.json");
+    const content = await fs.readFile(filePath, "utf-8");
+    const raw = JSON.parse(content) as unknown;
+    if (!Array.isArray(raw)) return [];
+    return raw as EnrollmentRecord[];
+  }
+  const res = await fetch("/enrollment_data.json", { cache: "no-store" });
+  if (!res.ok) throw new Error("Failed to load enrollment_data.json");
+  const raw = (await res.json()) as unknown;
+  if (!Array.isArray(raw)) return [];
+  return raw as EnrollmentRecord[];
+}
+
 export async function TopChannelsTableView({
   className,
   returnToUrl = "/",
@@ -127,32 +188,16 @@ export async function TopChannelsTableView({
   gpaFilters,
   attendanceFilters,
   interventionFilters = [],
+  sortBy = null,
+  sortOrder = "asc",
 }: PropsType) {
-  const { students: initialStudents } = await getStudentsByAlert(
-    selectedAlert,
-    { page: 1, pageSize: 100000 },
-    user,
-    masterFilter,
-    gpaFilters,
-    attendanceFilters,
-  );
-  const students = applyInterventionFilters(initialStudents, interventionFilters);
+  const enrollments = await fetchEnrollmentData();
 
-  const data = await getFullData();
-  const deptById = new Map(data.departments.map((d) => [d.id, d]));
-  const courseById = new Map(data.courses.map((c) => [c.id, c]));
-  const teachers = data.users.filter(
-    (u) => u.role === "teacher" && u.course_ids && u.course_ids.length > 0,
-  );
-  const courseIdToInstructorNames = new Map<string, string>();
-  for (const teacher of teachers) {
-    for (const cid of teacher.course_ids ?? []) {
-      const existing = courseIdToInstructorNames.get(cid);
-      courseIdToInstructorNames.set(
-        cid,
-        existing ? `${existing}, ${teacher.name}` : teacher.name,
-      );
-    }
+  // Total student count = number of objects (enrollment records) per course (CrCode)
+  const courseIdToStudentCount = new Map<string, number>();
+  for (const e of enrollments) {
+    const key = e.CrCode ?? e.CrTitle ?? "";
+    courseIdToStudentCount.set(key, (courseIdToStudentCount.get(key) ?? 0) + 1);
   }
 
   return (
@@ -162,10 +207,9 @@ export async function TopChannelsTableView({
         className,
       )}
     >
-      
-      {students.length === 0 ? (
+      {enrollments.length === 0 ? (
         <div className="mt-6 rounded-md border border-dashed border-stroke py-8 text-center text-dark-6 dark:border-dark-3">
-          No students match this filter.
+          No enrollment data found.
         </div>
       ) : (
         <div className="mt-4">
@@ -173,166 +217,76 @@ export async function TopChannelsTableView({
             <TableHeader className="sticky top-0 z-10 border-b border-stroke bg-white dark:bg-gray-dark dark:border-dark-3 [&>tr]:border-stroke dark:[&>tr]:border-dark-3">
               <TableRow className="border-none uppercase [&>th]:text-center [&>th]:bg-white [&>th]:dark:bg-gray-dark">
                 <TableHead className="min-w-[160px] !text-left">
-                  Name - SAPID
+                  Student Name
                 </TableHead>
-                {/* <TableHead className="min-w-[100px] !text-left">
+                <TableHead className="min-w-[100px] !text-left">
                   SAP ID
-                </TableHead> */}
+                </TableHead>
                 <TableHead className="min-w-[140px] !text-left">
                   Department
                 </TableHead>
-                <TableHead className="min-w-[80px] !text-left">
+                <TableHead className="min-w-[120px] !text-left">
                   Program
                 </TableHead>
-                {/* <TableHead className="min-w-[80px] !text-left">
+                <TableHead className="min-w-[160px] !text-left">
                   Course
-                </TableHead> */}
-                <TableHead className="min-w-[160px] !text-left">
-                  Course Name
                 </TableHead>
                 <TableHead className="min-w-[160px] !text-left">
-                  Instructor
+                  Instructor Name
                 </TableHead>
-                <TableHead className="text-center">
-                  Classes Held
-                </TableHead>
-                <TableHead className="text-center">
-                  Present
-                </TableHead>
-                <TableHead className="text-center">
-                  Absent
-                </TableHead>
-                <TableHead className="text-center">
-                  Attendance %
-                </TableHead>
-                <TableHead className="text-center">
-                  GPA
-                </TableHead>
-                <TableHead className="min-w-[120px] !text-center">
-                  Intervention Status
+                <TableHead className="min-w-[100px] !text-center">
+                  Total students (course)
                 </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {students.map((student) => {
-                const dept = deptById.get(student.department_id);
-                const course = courseById.get(student.course_id);
-                const programId = getProgramFromCourse(student.course_id);
-                const instructorNames =
-                  courseIdToInstructorNames.get(student.course_id) ?? "—";
-                const absent =
-                  student.attendance.total_classes_held -
-                  student.attendance.classes_attended;
-                const trendSymbol =
-                  student.gpa.trend === "up"
-                    ? "↗"
-                    : student.gpa.trend === "down"
-                      ? "↘"
-                      : "→";
-                const gpaColor =
-                  student.gpa.alert_level === "critical"
-                    ? "text-red font-semibold"
-                    : student.gpa.alert_level === "warning"
-                      ? "text-amber-600 dark:text-amber-400 font-semibold"
-                      : "text-dark dark:text-white";
-                const attColor =
-                  student.attendance.alert_level === "critical"
-                    ? "text-red font-semibold"
-                    : student.attendance.alert_level === "warning"
-                      ? "text-amber-600 dark:text-amber-400 font-semibold"
-                      : "text-dark dark:text-white";
+              {enrollments.map((row) => {
+                const courseKey = row.CrCode ?? row.CrTitle ?? "";
+                const totalForCourse =
+                  courseIdToStudentCount.get(courseKey) ?? 0;
+                const rowKey = row.Id ?? `${row.SapNo}-${courseKey}-${row.CrTitle}`;
 
                 return (
                   <TableRow
-                    key={student.sap_id}
+                    key={rowKey}
                     className="text-center text-base font-medium text-dark dark:text-white"
                   >
                     <TableCell className="!text-left font-medium">
                       {returnToUrl ? (
                         <StudentProfileLink
-                          sapId={student.sap_id}
+                          sapId={row.SapNo}
                           returnToUrl={returnToUrl}
                           className="inline-flex items-center gap-2 text-green-500 hover:bg-gray-100 hover:text-dark dark:text-dark-5 dark:hover:bg-dark-3 dark:hover:text-white rounded-md p-2 -m-2"
                           title="View profile"
                         >
-                          {student.name}
+                          {row.Name ?? "—"}
                         </StudentProfileLink>
                       ) : (
-                        student.name
+                        row.Name ?? "—"
                       )}
-                      <p className="text-xs text-dark-6 dark:text-dark-5"> SAP ID: {student.sap_id}</p>
                     </TableCell>
-                    {/* <TableCell className="!text-left text-dark-6">
-                    
-                    </TableCell> */}
-                    <TableCell className="!text-left">
-                      {dept?.name ?? "—"}
+                    <TableCell className="!text-left text-dark-6">
+                      {row.SapNo ?? "—"}
                     </TableCell>
-                    <TableCell className="!text-left">
-                      {programId}
+                    <TableCell className="!text-left text-dark-6">
+                      {row.DeptName ?? "—"}
                     </TableCell>
                     <TableCell className="!text-left">
-                      
-                      {student.course_id}- {course?.name ?? "—"}
+                      {row.DegreeTitle ?? row.DegreeCode ?? "—"}
                     </TableCell>
-                    {/* <TableCell className="!text-left">
-                      {course?.name ?? "—"}
-                    </TableCell> */}
                     <TableCell className="!text-left">
-                      {instructorNames}
-                    </TableCell>
-                    <TableCell>
-                      {student.attendance.total_classes_held}
-                    </TableCell>
-                    <TableCell>
-                      {student.attendance.classes_attended}
-                    </TableCell>
-                    <TableCell>{absent}</TableCell>
-                    <TableCell className={cn(attColor)}>
                       <div className="flex flex-col gap-1">
-                        <p>
-
-                      {student.attendance.attendance_percentage.toFixed(1)}%
-                        </p>
-                        <p className="text-xs text-dark-6 dark:text-dark-5">
-                          Avg:
-                        {student.attendance.class_average_attendance.toFixed(1)}%
-                        </p>
-                      </div>
-                    </TableCell>
-                    <TableCell className={cn(gpaColor)}>
-                      {student.gpa.current}
-                      <span
-                        className="ml-1 text-dark-6"
-                        title={student.gpa.trend}
-                      >
-                        {trendSymbol}
-                      </span>
-                      {student.gpa.change !== 0 && (
-                        <span
-                          className={cn(
-                            "ml-1 text-xs",
-                            student.gpa.change < 0 ? "text-red" : "text-green",
-                          )}
-                        >
-                          ({student.gpa.change > 0 ? "+" : ""}
-                          {student.gpa.change})
+                        <span>{row.CrTitle ?? row.CrCode ?? "—"}</span>
+                        <span className="text-sm text-[#1f4a3d]">
+                          {totalForCourse} students
                         </span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex flex-wrap items-center justify-center gap-2">
-                        <InterventionStatusBadge
-                          status={getLatestInterventionStatusForStudent(
-                            student.sap_id,
-                          )}
-                          goodStanding={
-                            student.gpa.alert_level == null &&
-                            student.attendance.alert_level == null
-                          }
-                        />
-                       
                       </div>
+                    </TableCell>
+                    <TableCell className="!text-left">
+                      {row.Teacher ?? "—"}
+                    </TableCell>
+                    <TableCell className="!text-center">
+                      {totalForCourse}
                     </TableCell>
                   </TableRow>
                 );
@@ -413,7 +367,202 @@ export async function TopChannels({
   gpaFilters,
   attendanceFilters,
   interventionFilters = [],
+  sortBy = null,
+  sortOrder = "asc",
 }: PropsType) {
+  const useSapNested = process.env.USE_SAP_MONITORING === "true";
+
+  if (useSapNested) {
+    const Campus = process.env.SAP_CAMPUS ?? "11";
+    const PYear = process.env.SAP_PYEAR ?? "2026";
+    const PSess = process.env.SAP_PSESS ?? "001";
+    const Begda = process.env.SAP_BEGDA ?? "20260120";
+    const Endda = process.env.SAP_ENDDA ?? "20260520";
+
+    const entries = await fetchMonitoringEntries({
+      Campus,
+      PYear,
+      PSess,
+      Begda,
+      Endda,
+    });
+
+    if (!entries.length) {
+      return (
+        <div
+          className={cn(
+            "grid rounded-[10px] bg-white px-7.5 pb-4 pt-7.5 shadow-1 dark:bg-gray-dark dark:shadow-card",
+            className,
+          )}
+        >
+          <div className="mt-6 rounded-md border border-dashed border-stroke py-8 text-center text-dark-6 dark:border-dark-3">
+            No instructor monitoring data found for this period.
+          </div>
+        </div>
+      );
+    }
+
+    type CourseInfo = {
+      code: string;
+      title: string;
+      instructors: Set<string>;
+    };
+
+    const byDepartment = new Map<
+      string,
+      Map<string, Map<string, CourseInfo>>
+    >();
+
+    for (const e of entries) {
+      const dept = (e.Department as string) ?? "Unknown Department";
+      const program = (e.Degree as string) ?? "Unknown Program";
+      const code = String(e.CrCode ?? "—");
+      const title = (e.CrTitle as string) ?? "—";
+      const instructor = (e.TeacherName as string) ?? "—";
+
+      if (!byDepartment.has(dept)) {
+        byDepartment.set(dept, new Map());
+      }
+      const progMap = byDepartment.get(dept)!;
+
+      if (!progMap.has(program)) {
+        progMap.set(program, new Map());
+      }
+      const courseMap = progMap.get(program)!;
+
+      if (!courseMap.has(code)) {
+        courseMap.set(code, {
+          code,
+          title,
+          instructors: new Set(),
+        });
+      }
+      courseMap.get(code)!.instructors.add(instructor);
+    }
+
+    const sortedDepartments = Array.from(byDepartment.keys()).sort((a, b) =>
+      a.localeCompare(b),
+    );
+
+    return (
+      <div
+        className={cn(
+          "grid rounded-[10px] bg-white px-7.5 pb-4 pt-7.5 shadow-1 dark:bg-gray-dark dark:shadow-card",
+          className,
+        )}
+      >
+        <div className="mt-4 space-y-4">
+          {sortedDepartments.map((deptName) => {
+            const progMap = byDepartment.get(deptName)!;
+            const deptSectionId = `sap-dept-${deptName}`;
+            const sortedPrograms = Array.from(progMap.keys()).sort((a, b) =>
+              a.localeCompare(b),
+            );
+
+            return (
+              <details
+                key={deptName}
+                data-section-id={deptSectionId}
+                open={expandedIds.includes(deptSectionId)}
+                className="group rounded-md border border-stroke bg-gray-50 dark:border-dark-3 dark:bg-dark-2"
+              >
+                <summary className="flex cursor-pointer items-center justify-between gap-4 px-4 py-3">
+                  <div className="flex flex-col gap-1">
+                    <span className="text-base font-semibold text-dark dark:text-white">
+                      Department:{" "}
+                      <span className="font-bold text-primary">{deptName}</span>
+                    </span>
+                  </div>
+                  <span className="ml-auto text-xs text-dark-6 transition-transform group-open:rotate-180 dark:text-dark-5">
+                    ▼
+                  </span>
+                </summary>
+                <div className="border-t border-stroke bg-white px-4 py-3 dark:border-dark-3 dark:bg-gray-dark">
+                  <div className="space-y-3">
+                    {sortedPrograms.map((programName) => {
+                      const courseMap = progMap.get(programName)!;
+                      const progSectionId = `${deptSectionId}-prog-${programName}`;
+                      const sortedCourses = Array.from(courseMap.values()).sort(
+                        (a, b) => a.code.localeCompare(b.code),
+                      );
+
+                      return (
+                        <details
+                          key={programName}
+                          data-section-id={progSectionId}
+                          open={expandedIds.includes(progSectionId)}
+                          className="group rounded-md border border-stroke bg-gray-50 dark:border-dark-3 dark:bg-dark-2"
+                        >
+                          <summary className="flex cursor-pointer items-center justify-between gap-4 px-4 py-3">
+                            <div className="flex flex-col gap-1">
+                              <span className="text-sm font-semibold text-dark dark:text-white">
+                                Program:{" "}
+                                <span className="font-bold text-primary">
+                                  {programName}
+                                </span>
+                              </span>
+                            </div>
+                            <span className="ml-auto text-xs text-dark-6 transition-transform group-open:rotate-180 dark:text-dark-5">
+                              ▼
+                            </span>
+                          </summary>
+                          <div className="border-t border-stroke bg-white px-4 py-3 dark:border-dark-3 dark:bg-gray-dark">
+                            <div className="space-y-3">
+                              {sortedCourses.map((course) => {
+                                const courseSectionId = `${progSectionId}-course-${course.code}`;
+                                const instructorNames = Array.from(
+                                  course.instructors,
+                                ).join(", ");
+
+                                return (
+                                  <details
+                                    key={course.code}
+                                    data-section-id={courseSectionId}
+                                    open={expandedIds.includes(courseSectionId)}
+                                    className="group rounded-md border border-stroke bg-gray-50 dark:border-dark-3 dark:bg-dark-2"
+                                  >
+                                    <summary className="flex cursor-pointer items-center justify-between gap-4 px-4 py-3">
+                                      <div className="flex flex-col gap-1">
+                                        <span className="text-sm font-semibold text-dark dark:text-white">
+                                          Course:{" "}
+                                          <span className="font-bold text-primary">
+                                            {course.code}
+                                          </span>
+                                          {course.title && (
+                                            <span className="ml-2 text-xs text-dark-6 dark:text-dark-5">
+                                              ({course.title})
+                                            </span>
+                                          )}
+                                        </span>
+                                        <span className="text-xs text-dark-6 dark:text-dark-5">
+                                          Instructor(s):{" "}
+                                          <span className="font-semibold text-dark dark:text-white">
+                                            {instructorNames || "—"}
+                                          </span>
+                                        </span>
+                                      </div>
+                                      <span className="ml-auto text-xs text-dark-6 transition-transform group-open:rotate-180 dark:text-dark-5">
+                                        ▼
+                                      </span>
+                                    </summary>
+                                  </details>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </details>
+                      );
+                    })}
+                  </div>
+                </div>
+              </details>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
   const { students: initialStudents } = await getStudentsByAlert(
     selectedAlert,
     { page: 1, pageSize: 100000 },
@@ -422,7 +571,15 @@ export async function TopChannels({
     gpaFilters,
     attendanceFilters,
   );
-  const students = applyInterventionFilters(initialStudents, interventionFilters);
+  const statusMap = await getLatestInterventionStatusMap(
+    initialStudents.map((s) => s.sap_id),
+  );
+  const filtered = applyInterventionFilters(
+    initialStudents,
+    interventionFilters,
+    statusMap,
+  );
+  const students = sortStudents(filtered, sortBy, sortOrder);
 
   // For deans, show nested structure: Department -> Program -> Course -> Students
   if (user?.role === "dean") {
@@ -646,15 +803,16 @@ export async function TopChannels({
                                               <TableHead className="min-w-[100px] !text-left">
                                                 SAP ID
                                               </TableHead>
-                                              <TableHead className="min-w-[80px] !text-left">
-                                                Course
-                                              </TableHead>
+                                            
                                               <TableHead className="text-center">Present</TableHead>
                                               <TableHead className="text-center">Absent</TableHead>
-                                              <TableHead className="text-center">
+                                              <SortableTableHead sortKey="attendance" currentSort={sortBy} currentOrder={sortOrder}>
                                                 Attendance %
-                                              </TableHead>
-                                              <TableHead className="text-center">GPA</TableHead>
+                                              </SortableTableHead>
+                                              <SortableTableHead sortKey="gpa" currentSort={sortBy} currentOrder={sortOrder}>
+                                                GPA
+                                              </SortableTableHead>
+                                              <ClearSortButton />
                                               <TableHead className="min-w-[80px] !text-center">
                                                 Intervention Status
                                               </TableHead>
@@ -717,9 +875,7 @@ export async function TopChannels({
                                                   <TableCell className="!text-left text-dark-6">
                                                     {student.sap_id}
                                                   </TableCell>
-                                                  <TableCell className="!text-left">
-                                                    {student.course_id}
-                                                  </TableCell>
+                                                 
                                                  
                                                   <TableCell>
                                                     {student.attendance.classes_attended}
@@ -753,10 +909,11 @@ export async function TopChannels({
                                                       </span>
                                                     )}
                                                   </TableCell>
+                                                  <TableCell className="w-0 min-w-0 p-0" />
                                                   <TableCell>
                                                     <div className="flex flex-wrap items-center gap-2">
                                                       <InterventionStatusBadge
-                                                        status={getLatestInterventionStatusForStudent(student.sap_id)}
+                                                        status={statusMap.get(student.sap_id) ?? null}
                                                         goodStanding={student.gpa.alert_level == null && student.attendance.alert_level == null}
                                                       />
                                                     </div>
@@ -1026,15 +1183,17 @@ export async function TopChannels({
                                               <TableHead className="min-w-[100px] !text-left">
                                                 SAP ID
                                               </TableHead>
-                                              <TableHead className="min-w-[80px] !text-left">
-                                                Course
-                                              </TableHead>
-                                              <TableHead className="text-center">GPA</TableHead>
+                                          
+                                              
                                               <TableHead className="text-center">Present</TableHead>
                                               <TableHead className="text-center">Absent</TableHead>
-                                              <TableHead className="text-center">
+                                              <SortableTableHead sortKey="attendance" currentSort={sortBy} currentOrder={sortOrder}>
                                                 Attendance %
-                                              </TableHead>
+                                              </SortableTableHead>
+                                              <SortableTableHead sortKey="gpa" currentSort={sortBy} currentOrder={sortOrder}>
+                                                GPA
+                                              </SortableTableHead>
+                                              <ClearSortButton />
                                               <TableHead className="min-w-[80px] !text-left">
                                                 Intervention Status
                                               </TableHead>
@@ -1070,13 +1229,29 @@ export async function TopChannels({
                                                   key={student.sap_id}
                                                 >
                                                   <TableCell className="!text-left font-medium">
-                                                    {student.name}
+                                                    <StudentProfileLink
+                                                      sapId={student.sap_id}
+                                                      returnToUrl={returnToUrl}
+                                                      className="inline-flex items-center gap-2 text-green-500 hover:bg-gray-100 hover:text-dark dark:text-dark-5 dark:hover:bg-dark-3 dark:hover:text-white rounded-md p-2 -m-2"
+                                                      title="View profile"
+                                                    >
+                                                      {student.name}
+                                                    </StudentProfileLink>
                                                   </TableCell>
                                                   <TableCell className="!text-left text-dark-6">
                                                     {student.sap_id}
                                                   </TableCell>
-                                                  <TableCell className="!text-left">
-                                                    {student.course_id}
+                                                
+                                                 
+                                                  <TableCell>
+                                                    {student.attendance.classes_attended}
+                                                  </TableCell>
+                                                  <TableCell>{absent}</TableCell>
+                                                  <TableCell className={cn(attColor)}>
+                                                    {student.attendance.attendance_percentage.toFixed(
+                                                      1,
+                                                    )}
+                                                    %
                                                   </TableCell>
                                                   <TableCell className={cn(gpaColor)}>
                                                     {student.gpa.current}
@@ -1100,20 +1275,11 @@ export async function TopChannels({
                                                       </span>
                                                     )}
                                                   </TableCell>
-                                                  <TableCell>
-                                                    {student.attendance.classes_attended}
-                                                  </TableCell>
-                                                  <TableCell>{absent}</TableCell>
-                                                  <TableCell className={cn(attColor)}>
-                                                    {student.attendance.attendance_percentage.toFixed(
-                                                      1,
-                                                    )}
-                                                    %
-                                                  </TableCell>
+                                                  <TableCell className="w-0 min-w-0 p-0" />
                                                   <TableCell>
                                                     <div className="flex flex-wrap items-center gap-2">
                                                       <InterventionStatusBadge
-                                                        status={getLatestInterventionStatusForStudent(student.sap_id)}
+                                                        status={statusMap.get(student.sap_id) ?? null}
                                                         goodStanding={student.gpa.alert_level == null && student.attendance.alert_level == null}
                                                       />
                                                      
@@ -1251,18 +1417,17 @@ export async function TopChannels({
                         <TableHead className="min-w-[100px] !text-left">
                           SAP ID
                         </TableHead>
-                        <TableHead className="min-w-[80px] !text-left">
-                          Course
-                        </TableHead>
-                        <TableHead className="text-center">GPA</TableHead>
+                   
+                      
                         <TableHead className="text-center">Present</TableHead>
                         <TableHead className="text-center">Absent</TableHead>
-                        <TableHead className="text-center">
+                        <SortableTableHead sortKey="attendance" currentSort={sortBy} currentOrder={sortOrder}>
                           Attendance %
-                        </TableHead>
-
-
-
+                        </SortableTableHead>
+                        <SortableTableHead sortKey="gpa" currentSort={sortBy} currentOrder={sortOrder}>
+                          GPA
+                        </SortableTableHead>
+                        <ClearSortButton />
                         <TableHead className="min-w-[80px] !text-left">
                           Intervention Status
                         </TableHead>
@@ -1298,13 +1463,31 @@ export async function TopChannels({
                             key={student.sap_id}
                           >
                             <TableCell className="!text-left font-medium">
-                              {student.name}
+                              <StudentProfileLink
+                                sapId={student.sap_id}
+                                returnToUrl={returnToUrl}
+                                className="inline-flex items-center gap-2 text-green-500 hover:bg-gray-100 hover:text-dark dark:text-dark-5 dark:hover:bg-dark-3 dark:hover:text-white rounded-md p-2 -m-2"
+                                title="View profile"
+                              >
+                                {student.name}
+                              </StudentProfileLink>
                             </TableCell>
                             <TableCell className="!text-left text-dark-6">
                               {student.sap_id}
                             </TableCell>
-                            <TableCell className="!text-left">
-                              {student.course_id}
+                           
+                           
+
+
+                            <TableCell>
+                              {student.attendance.classes_attended}
+                            </TableCell>
+                            <TableCell>{absent}</TableCell>
+                            <TableCell className={cn(attColor)}>
+                              {student.attendance.attendance_percentage.toFixed(
+                                1,
+                              )}
+                              %
                             </TableCell>
                             <TableCell className={cn(gpaColor)}>
                               {student.gpa.current}
@@ -1328,22 +1511,11 @@ export async function TopChannels({
                                 </span>
                               )}
                             </TableCell>
-
-
-                            <TableCell>
-                              {student.attendance.classes_attended}
-                            </TableCell>
-                            <TableCell>{absent}</TableCell>
-                            <TableCell className={cn(attColor)}>
-                              {student.attendance.attendance_percentage.toFixed(
-                                1,
-                              )}
-                              %
-                            </TableCell>
+                            <TableCell className="w-0 min-w-0 p-0" />
                             <TableCell>
                               <div className="flex flex-wrap items-center gap-2">
                                 <InterventionStatusBadge
-                                                        status={getLatestInterventionStatusForStudent(student.sap_id)}
+                                                        status={statusMap.get(student.sap_id) ?? null}
                                                         goodStanding={student.gpa.alert_level == null && student.attendance.alert_level == null}
                                                       />
                                 <StudentActionDropdown student={student} latestResult={null} />

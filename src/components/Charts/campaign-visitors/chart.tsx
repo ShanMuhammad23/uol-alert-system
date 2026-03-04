@@ -56,10 +56,22 @@ export function CampaignVisitorsChart({
         columnWidth: "40%",
         borderRadius: 3,
         distributed: true,
+        dataLabels: {
+          position: "top",
+          hideOverflowingLabels: false,
+          
+        },
+
       },
     },
     dataLabels: {
       enabled: true,
+      offsetY: -16,
+      style: {
+        fontSize: "16px",
+        fontWeight: "bold",
+        colors: ["#000"],
+      },
     },
     stroke: {
       show: true,

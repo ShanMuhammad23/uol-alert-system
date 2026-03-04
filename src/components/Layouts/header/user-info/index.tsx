@@ -22,7 +22,7 @@ export function UserInfo({ user }: UserInfoProps) {
 
   const displayName = user?.name ?? "Guest";
   const displayEmail = user?.email ?? "";
-  const img = '/images/user/user-03.png';
+  const img = '/images/user/user-placeholder.jpg';
   const isSignedIn = !!user;
 
   return (
@@ -32,8 +32,8 @@ export function UserInfo({ user }: UserInfoProps) {
 
         <figure className="flex items-center gap-3">
           <Image
-            src='/images/user/user-03.png'
-            className="size-12"
+            src='/images/user/user-placeholder.jpg'
+            className="size-12 rounded-full"
             alt={`Avatar of ${displayName}`}
             role="presentation"
             width={200}
@@ -62,8 +62,8 @@ export function UserInfo({ user }: UserInfoProps) {
 
         <figure className="flex items-center gap-2.5 px-5 py-3.5">
           <Image
-            src='/images/user/user-03.png'
-            className="size-12"
+            src='/images/user/user-placeholder.jpg'
+            className="size-12 rounded-full"
             alt={`Avatar for ${displayName}`}
             role="presentation"
             width={200}

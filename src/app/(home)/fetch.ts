@@ -4,8 +4,31 @@ import { getStudentsForRole, getCoursesForRole, getDepartmentsForRole } from "@/
 import type { User } from "@/lib/role";
 import { getDemoUserEmail } from "@/lib/auth";
 import { getInterventionStatsForStudents } from "@/data/intervention-store";
+import { fetchMonitoringEntries, mapMonitoringToStudents, getMonitoringStudentsBySapId } from "@/lib/sap-monitoring";
 
 const DATA_FILE = "data.json";
+const ENROLLMENT_DATA_FILE = "enrollment_data.json";
+
+/** Minimal shape of one record from public/enrollment_data.json (one row per course enrollment; same student can appear multiple times). */
+type EnrollmentRecord = {
+  DeptCode: string;
+  DeptName: string;
+  DeptId: string;
+  SapNo: string;
+  FacId?: string;
+  DegreeCode?: string;
+  DegreeTitle?: string;
+  /** Instructor/teacher display name. */
+  Teacher?: string | null;
+  /** Unique employee number of the teacher (Pernr). */
+  Pernr?: string;
+};
+
+/** Map data.json faculty_id (e.g. FAC_ENG) to enrollment_data.json FacId (e.g. 50000172). */
+const FACULTY_ID_TO_ENROLLMENT_FAC_ID: Record<string, string> = {
+  FAC_ENG: "50000172",
+  FAC_MGT: "50000172",
+};
 
 /** Extract program prefix from course ID (e.g. "CS101" -> "CS") */
 export function getProgramFromCourse(courseId: string): string {
@@ -73,6 +96,10 @@ export type Student = {
   course_id: string;
   department_id: string;
   faculty_id: string;
+  /** Optional labels sourced from live SAP data. */
+  department_name?: string;
+  course_name?: string;
+  instructor_name?: string;
   attendance: {
     total_classes_held: number;
     classes_attended: number;
@@ -216,6 +243,29 @@ async function getDataJson(): Promise<DataJson> {
   const dataPath = path.join(process.cwd(), "public", DATA_FILE);
   const raw = await readFile(dataPath, "utf-8");
   const data = JSON.parse(raw) as DataJson;
+
+  const useSap = process.env.USE_SAP_MONITORING === "true";
+
+  if (useSap) {
+    // When enabled, replace students with live SAP monitoring data.
+    const campus = process.env.SAP_CAMPUS ?? "11";
+    const year = process.env.SAP_PYEAR ?? "2023";
+    const session = process.env.SAP_PSESS ?? "001";
+    const begda = process.env.SAP_BEGDA ?? "20230120";
+    const endda = process.env.SAP_ENDDA ?? "20230520";
+
+    const monitoringEntries = await fetchMonitoringEntries({
+      Campus: campus,
+      PYear: year,
+      PSess: session,
+      Begda: begda,
+      Endda: endda,
+    });
+
+    const sapStudents = mapMonitoringToStudents(monitoringEntries);
+    data.students = sapStudents;
+  }
+
   data.students.forEach(applyGpaAlertThreshold);
   return data;
 }
@@ -367,12 +417,103 @@ export type DepartmentStats = {
   redAttendance: number;
 };
 
+/** Reads public/enrollment_data.json and returns department stats: unique department names and unique student count per department. Optional facultyId filters by FacId. Alert counts (yellow/red) are 0 as enrollment data has no GPA/attendance. */
+export async function getDepartmentStatsFromEnrollment(
+  facultyId?: string | null
+): Promise<DepartmentStats[]> {
+  try {
+    const dataPath = path.join(process.cwd(), "public", ENROLLMENT_DATA_FILE);
+    const raw = await readFile(dataPath, "utf-8");
+    const records = JSON.parse(raw) as EnrollmentRecord[];
+    if (!Array.isArray(records) || !records.length) return [];
+
+    let list = records;
+    if (facultyId) {
+      const enrollmentFacId = FACULTY_ID_TO_ENROLLMENT_FAC_ID[facultyId] ?? facultyId;
+      list = list.filter((r) => r.FacId === enrollmentFacId);
+    }
+
+    // Unique students per department: key by DeptCode, value = Set of SapNo
+    const byDept = new Map<string, { name: string; sapIds: Set<string> }>();
+    for (const r of list) {
+      const id = r.DeptCode || r.DeptId;
+      const name = r.DeptName?.trim() || id;
+      if (!id) continue;
+      if (!byDept.has(id)) byDept.set(id, { name, sapIds: new Set() });
+      byDept.get(id)!.sapIds.add(r.SapNo);
+    }
+
+    return Array.from(byDept.entries())
+      .map(([departmentId, { name, sapIds }]) => ({
+        departmentId,
+        departmentName: name,
+        total: sapIds.size,
+        yellowGpa: 0,
+        redGpa: 0,
+        yellowAttendance: 0,
+        redAttendance: 0,
+      }))
+      .sort((a, b) => a.departmentName.localeCompare(b.departmentName));
+  } catch {
+    return [];
+  }
+}
+
 /** Stats per department for a faculty (dean view). When facultyId is null, returns all departments. Relation is one-way: department only (instructor does not filter departments). */
 export async function getDeanDepartmentStats(
   facultyId: string | null,
   options?: { departmentIds?: string[] }
 ): Promise<DepartmentStats[]> {
+  const useSap = process.env.USE_SAP_MONITORING === "true";
   const data = await getDataJson();
+
+  // SAP-backed path: derive departments from monitoring (student) data filtered by faculty NAME.
+  // Here facultyId is treated as the faculty NAME coming from the logged-in dean, not an internal ID.
+  if (useSap) {
+    if (!facultyId) return [];
+
+    const studentsForFaculty = data.students.filter(
+      (s) => s.faculty_id === facultyId
+    );
+    if (!studentsForFaculty.length) return [];
+
+    const byDeptName = new Map<string, Student[]>();
+    for (const s of studentsForFaculty) {
+      const deptKey = s.department_name ?? s.department_id;
+      if (!deptKey) continue;
+      if (!byDeptName.has(deptKey)) byDeptName.set(deptKey, []);
+      byDeptName.get(deptKey)!.push(s);
+    }
+
+    let entries = Array.from(byDeptName.entries());
+    if (options?.departmentIds?.length) {
+      const filterSet = new Set(options.departmentIds);
+      entries = entries.filter(([deptId]) => filterSet.has(deptId));
+    }
+
+    return entries.map(([deptId, deptStudents]) => {
+      let yellowGpa = 0,
+        redGpa = 0,
+        yellowAttendance = 0,
+        redAttendance = 0;
+      for (const s of deptStudents) {
+        if (s.gpa.alert_level === "critical") redGpa += 1;
+        if (s.gpa.alert_level === "warning") yellowGpa += 1;
+        if (s.attendance.alert_level === "critical") redAttendance += 1;
+        if (s.attendance.alert_level === "warning") yellowAttendance += 1;
+      }
+      return {
+        departmentId: deptId,
+        departmentName: deptId,
+        total: deptStudents.length,
+        yellowGpa,
+        redGpa,
+        yellowAttendance,
+        redAttendance,
+      };
+    });
+  }
+
   let departments = facultyId
     ? data.departments.filter((d) => d.faculty_id === facultyId)
     : data.departments;
@@ -415,6 +556,56 @@ export type InstructorStats = {
   yellowAttendance: number;
   redAttendance: number;
 };
+
+/** Reads public/enrollment_data.json and returns instructor stats: unique instructors by Pernr (teacher employee number), with unique student count per teacher. Optional facultyId/departmentIds/instructorIds filter. Alert counts are 0. */
+export async function getInstructorStatsFromEnrollment(
+  facultyId?: string | null,
+  options?: { departmentIds?: string[]; instructorIds?: string[] }
+): Promise<InstructorStats[]> {
+  try {
+    const dataPath = path.join(process.cwd(), "public", ENROLLMENT_DATA_FILE);
+    const raw = await readFile(dataPath, "utf-8");
+    const records = JSON.parse(raw) as EnrollmentRecord[];
+    if (!Array.isArray(records) || !records.length) return [];
+
+    let list = records;
+    if (facultyId) {
+      const enrollmentFacId = FACULTY_ID_TO_ENROLLMENT_FAC_ID[facultyId] ?? facultyId;
+      list = list.filter((r) => r.FacId === enrollmentFacId);
+    }
+    if (options?.departmentIds?.length) {
+      const deptSet = new Set(options.departmentIds);
+      list = list.filter((r) => deptSet.has(r.DeptCode) || deptSet.has(r.DeptId));
+    }
+    if (options?.instructorIds?.length) {
+      const instructorSet = new Set(options.instructorIds);
+      list = list.filter((r) => r.Pernr && instructorSet.has(r.Pernr));
+    }
+
+    const byInstructor = new Map<string, { name: string; sapIds: Set<string> }>();
+    for (const r of list) {
+      const pernr = (r.Pernr ?? "").trim();
+      if (!pernr) continue;
+      const name = (r.Teacher ?? pernr).trim();
+      if (!byInstructor.has(pernr)) byInstructor.set(pernr, { name, sapIds: new Set() });
+      byInstructor.get(pernr)!.sapIds.add(r.SapNo);
+    }
+
+    return Array.from(byInstructor.entries())
+      .map(([instructorId, { name, sapIds }]) => ({
+        instructorId,
+        instructorName: name,
+        total: sapIds.size,
+        yellowGpa: 0,
+        redGpa: 0,
+        yellowAttendance: 0,
+        redAttendance: 0,
+      }))
+      .sort((a, b) => a.instructorName.localeCompare(b.instructorName));
+  } catch {
+    return [];
+  }
+}
 
 /** Stats per instructor for a faculty (dean view). Returns instructors in departments under the given faculty. */
 export async function getDeanInstructorStats(
@@ -468,8 +659,110 @@ export async function getDeanInstructorStats(
   });
 }
 
+/** Reads public/enrollment_data.json and returns program stats: unique program (DegreeCode/DegreeTitle) and unique student count per program. Optional facultyId filters by FacId; optional departmentIds filter by DeptCode. Alert counts are 0. */
+export async function getProgramStatsFromEnrollment(
+  facultyId?: string | null,
+  options?: { departmentIds?: string[] }
+): Promise<ProgramStats[]> {
+  try {
+    const dataPath = path.join(process.cwd(), "public", ENROLLMENT_DATA_FILE);
+    const raw = await readFile(dataPath, "utf-8");
+    const records = JSON.parse(raw) as EnrollmentRecord[];
+    if (!Array.isArray(records) || !records.length) return [];
+
+    let list = records;
+    if (facultyId) {
+      const enrollmentFacId = FACULTY_ID_TO_ENROLLMENT_FAC_ID[facultyId] ?? facultyId;
+      list = list.filter((r) => r.FacId === enrollmentFacId);
+    }
+    if (options?.departmentIds?.length) {
+      const deptSet = new Set(options.departmentIds);
+      list = list.filter((r) => deptSet.has(r.DeptCode) || deptSet.has(r.DeptId));
+    }
+
+    const byProgram = new Map<string, { title: string; sapIds: Set<string> }>();
+    for (const r of list) {
+      const id = (r.DegreeCode || r.DeptCode || "").trim();
+      const title = (r.DegreeTitle || r.DeptName || id || "Unknown").trim();
+      if (!id) continue;
+      if (!byProgram.has(id)) byProgram.set(id, { title, sapIds: new Set() });
+      byProgram.get(id)!.sapIds.add(r.SapNo);
+    }
+
+    return Array.from(byProgram.entries())
+      .map(([programId, { title, sapIds }]) => ({
+        programId,
+        programTitle: title,
+        total: sapIds.size,
+        yellowGpa: 0,
+        redGpa: 0,
+        yellowAttendance: 0,
+        redAttendance: 0,
+      }))
+      .sort((a, b) => (a.programTitle || a.programId).localeCompare(b.programTitle || b.programId));
+  } catch {
+    return [];
+  }
+}
+
+/** Stats per program for a faculty (dean view). Departments can optionally be narrowed via departmentIds. */
+export async function getDeanProgramStats(
+  facultyId: string | null,
+  options?: { departmentIds?: string[] }
+): Promise<ProgramStats[]> {
+  if (!facultyId) return [];
+  const data = await getDataJson();
+  const deptIdsInFaculty = data.departments
+    .filter((d) => d.faculty_id === facultyId)
+    .map((d) => d.id);
+
+  if (!deptIdsInFaculty.length) return [];
+
+  let departmentIds = deptIdsInFaculty;
+  if (options?.departmentIds?.length) {
+    const filterSet = new Set(options.departmentIds);
+    departmentIds = deptIdsInFaculty.filter((id) => filterSet.has(id));
+  }
+
+  if (!departmentIds.length) return [];
+
+  const deptSet = new Set(departmentIds);
+  const students = data.students.filter((s) => deptSet.has(s.department_id));
+  const byProgram = new Map<string, Student[]>();
+  for (const s of students) {
+    const programId = getProgramFromCourse(s.course_id);
+    if (!byProgram.has(programId)) byProgram.set(programId, []);
+    byProgram.get(programId)!.push(s);
+  }
+  const entries = Array.from(byProgram.entries()).sort(([a], [b]) =>
+    a.localeCompare(b)
+  );
+  return entries.map(([programId, progStudents]) => {
+    let yellowGpa = 0,
+      redGpa = 0,
+      yellowAttendance = 0,
+      redAttendance = 0;
+    for (const s of progStudents) {
+      if (s.gpa.alert_level === "critical") redGpa += 1;
+      if (s.gpa.alert_level === "warning") yellowGpa += 1;
+      if (s.attendance.alert_level === "critical") redAttendance += 1;
+      if (s.attendance.alert_level === "warning") yellowAttendance += 1;
+    }
+    return {
+      programId,
+      total: progStudents.length,
+      yellowGpa,
+      redGpa,
+      yellowAttendance,
+      redAttendance,
+    };
+  });
+}
+
 export type ProgramStats = {
   programId: string;
+  /** Optional display title (e.g. from enrollment DegreeTitle). */
+  programTitle?: string;
   total: number;
   yellowGpa: number;
   redGpa: number;
@@ -664,7 +957,7 @@ export async function getInterventionChartData(
     attendanceFilters
   );
   const sapIds = result.students.map((s) => s.sap_id);
-  const stats = getInterventionStatsForStudents(sapIds);
+  const stats = await getInterventionStatsForStudents(sapIds);
 
   const statusColors: Record<string, string> = {
     "Not Started": "#DE2649",
@@ -690,6 +983,12 @@ export async function getInterventionChartData(
 }
 
 export async function getStudentBySapId(sapId: string): Promise<Student | null> {
+  try {
+    const sapStudents = await getMonitoringStudentsBySapId(sapId);
+    if (sapStudents.length > 0) return sapStudents[0];
+  } catch {
+    // SAP not configured or request failed; fall back to static data.
+  }
   const data = await getDataJson();
   return data.students.find((s) => s.sap_id === sapId) ?? null;
 }

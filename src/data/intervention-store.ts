@@ -1,3 +1,4 @@
+"use server";
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "fs";
 import path from "path";
 import { revalidatePath } from "next/cache";
@@ -42,9 +43,9 @@ function writeStore(records: InterventionRecord[]): void {
 }
 
 /** All interventions for a student, newest first. */
-export function getInterventionsByStudentSapId(
+export async function getInterventionsByStudentSapId(
   sapId: string
-): InterventionRecord[] {
+): Promise<InterventionRecord[]> {
   const stored = readStore();
   return stored
     .filter((r) => r.student_sap_id === sapId)
@@ -55,11 +56,34 @@ export function getInterventionsByStudentSapId(
 }
 
 /** Latest intervention status for this student (for badge). Returns null when no intervention. */
-export function getLatestInterventionStatusForStudent(
+export async function getLatestInterventionStatusForStudent(
   sapId: string
-): string | null {
-  const list = getInterventionsByStudentSapId(sapId);
+): Promise<string | null> {
+  const list = await getInterventionsByStudentSapId(sapId);
   return list.length > 0 ? list[0].status : null;
+}
+
+/** Batch: latest intervention status per student. Use when rendering many students to avoid N async calls. */
+export async function getLatestInterventionStatusMap(
+  sapIds: string[]
+): Promise<Map<string, string | null>> {
+  const stored = readStore();
+  const latestBySapId = new Map<string, InterventionRecord>();
+  for (const r of stored) {
+    const existing = latestBySapId.get(r.student_sap_id);
+    if (
+      !existing ||
+      new Date(r.performed_at).getTime() > new Date(existing.performed_at).getTime()
+    ) {
+      latestBySapId.set(r.student_sap_id, r);
+    }
+  }
+  const map = new Map<string, string | null>();
+  for (const sapId of sapIds) {
+    const record = latestBySapId.get(sapId);
+    map.set(sapId, record?.status ?? null);
+  }
+  return map;
 }
 
 export type InterventionStatsCounts = {
@@ -75,9 +99,9 @@ export type InterventionStatsCounts = {
  * returns counts per intervention status. "Not Started" = in alert but no action taken.
  * Sum of all counts equals sapIds.length.
  */
-export function getInterventionStatsForStudents(
+export async function getInterventionStatsForStudents(
   sapIds: string[]
-): InterventionStatsCounts {
+): Promise<InterventionStatsCounts> {
   const stored = readStore();
   const latestBySapId = new Map<string, InterventionRecord>();
   for (const r of stored) {
@@ -113,7 +137,7 @@ export function getInterventionStatsForStudents(
   };
 }
 
-export function recordIntervention(
+export async function recordIntervention(
   studentSapId: string,
   data: {
     date: string;
@@ -121,7 +145,7 @@ export function recordIntervention(
     remarks: string;
     status: string;
   }
-): void {
+): Promise<void> {
   const stored = readStore();
   const record: InterventionRecord = {
     id: `int-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,

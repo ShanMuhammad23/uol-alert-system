@@ -1,12 +1,15 @@
+"use client";
+
 import Link from "next/link";
-import { getDeanInstructorStats } from "../fetch";
-import type { AppUser } from "../fetch";
+import type { InstructorStats, DeanStatsUser } from "@/lib/enrollment";
 import { cn } from "@/lib/utils";
 
 type PropsType = {
-  user: AppUser | null;
+  user: DeanStatsUser | null;
   selectedDepartmentId?: string;
   selectedInstructorId?: string;
+  /** Stats from enrollment or server; when empty, nothing is rendered. */
+  stats?: InstructorStats[] | null;
 };
 
 function buildInstructorUrl(
@@ -18,25 +21,20 @@ function buildInstructorUrl(
   return `/?${params.toString()}`;
 }
 
-export async function DeanInstructorStats({
+export function DeanInstructorStats({
   user,
   selectedDepartmentId,
   selectedInstructorId,
+  stats = null,
 }: PropsType) {
   if (!user || user.role !== "dean") return null;
 
-  const stats = await getDeanInstructorStats(user.faculty_id ?? null, {
-    ...(selectedInstructorId
-      ? { instructorIds: [selectedInstructorId] }
-      : selectedDepartmentId
-        ? { departmentIds: [selectedDepartmentId] }
-        : {}),
-  });
-  if (!stats.length) return null;
+  const list = stats ?? [];
+  if (!list.length) return null;
 
   return (
     <div className="max-h-[240px] overflow-y-auto custom-scrollbar flex flex-wrap gap-2">
-      {stats.map((i) => (
+      {list.map((i) => (
         <Link
           key={i.instructorId}
           href={buildInstructorUrl(i.instructorId, selectedDepartmentId)}
@@ -55,14 +53,18 @@ export async function DeanInstructorStats({
               {i.yellowAttendance}
             </span>
             {" | "}
-            <span className={cn("text-red-500 font-bold", i.redAttendance > 0 ? "text-red-500" : "text-gray-600 dark:text-gray-400")}>{i.redAttendance}</span>
+            <span className={cn("text-red-500 font-bold", i.redAttendance > 0 ? "text-red-500" : "text-gray-600 dark:text-gray-400")}>
+              {i.redAttendance}
+            </span>
             {" · "}
             GPA:{" "}
             <span className={cn("text-amber-500 dark:text-amber-500 font-bold", i.yellowGpa > 0 ? "text-amber-500 dark:text-amber-500" : "text-gray-600 dark:text-gray-400")}>
               {i.yellowGpa}
             </span>
             {" | "}
-            <span className={cn("text-red-500 font-bold", i.redGpa > 0 ? "text-red-500" : "text-gray-600 dark:text-gray-400")}>{i.redGpa}</span>
+            <span className={cn("text-red-500 font-bold", i.redGpa > 0 ? "text-red-500" : "text-gray-600 dark:text-gray-400")}>
+              {i.redGpa}
+            </span>
           </span>
         </Link>
       ))}

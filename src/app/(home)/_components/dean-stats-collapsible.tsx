@@ -64,24 +64,34 @@ function ChevronDownIcon({ className }: { className?: string }) {
 
 type DeanStatsCollapsibleProps = {
   departmentContent: ReactNode;
+  programContent: ReactNode;
   instructorContent: ReactNode;
   /** When set, Instructors section is open by default so instructors for the selected department auto-appear. */
   selectedDepartmentId?: string;
+  /** When set, Instructors section is also opened when a program is selected. */
+  selectedProgramId?: string;
 };
 
 export function DeanStatsCollapsible({
   departmentContent,
+  programContent,
   instructorContent,
   selectedDepartmentId,
+  selectedProgramId,
 }: DeanStatsCollapsibleProps) {
   return (
-    <div className="mt-4 border-t border-gray-3 pt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-      <CollapsibleSection title="Departments" defaultOpen={true}>
-        {departmentContent}
-      </CollapsibleSection>
+    <div className="mt-4 border-t border-gray-3 pt-4 space-y-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <CollapsibleSection title="Departments" defaultOpen={true}>
+          {departmentContent}
+        </CollapsibleSection>
+        <CollapsibleSection title="Programs" defaultOpen={true}>
+          {programContent}
+        </CollapsibleSection>
+      </div>
       <CollapsibleSection
         title="Instructors"
-        defaultOpen={!!selectedDepartmentId}
+        defaultOpen={!!selectedDepartmentId || !!selectedProgramId}
       >
         {instructorContent}
       </CollapsibleSection>

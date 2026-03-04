@@ -82,7 +82,7 @@ export function InterventionHistorySection({ interventions, studentSapId }: Prop
             <TableHeader>
               <TableRow className="border-stroke dark:border-dark-3">
                 <TableHead className="font-semibold text-dark dark:text-white">Date</TableHead>
-                <TableHead className="font-semibold text-dark dark:text-white">Outreach Mode</TableHead>
+                <TableHead className="font-semibold text-dark dark:text-white">Mode</TableHead>
                 <TableHead className="font-semibold text-dark dark:text-white">Remarks</TableHead>
                 <TableHead className="font-semibold text-dark dark:text-white">Status</TableHead>
               </TableRow>

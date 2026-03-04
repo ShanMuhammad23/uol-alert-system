@@ -53,7 +53,7 @@ export async function HodProgramStats({
               {" | "}
               <span className={cn("text-red-500 font-bold", p.redAttendance > 0 ? "text-red-500" : "text-gray-600 dark:text-gray-400")}>{p.redAttendance}</span>
               {" · "}
-              GPA: <span className="text-amber-500 dark:text-amber-500 font-bold">{p.yellowGpa}</span>
+              GPA: <span className={cn("text-amber-500 dark:text-amber-500 font-bold", p.yellowGpa > 0 ? "text-amber-500 dark:text-amber-500" : "text-gray-600 dark:text-gray-400")}>{p.yellowGpa}</span>
               {" | "}
               <span className={cn("text-red-500 font-bold", p.redGpa > 0 ? "text-red-500" : "text-gray-600 dark:text-gray-400")}>{p.redGpa}</span>
             </span>

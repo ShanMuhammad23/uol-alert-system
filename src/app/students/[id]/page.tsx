@@ -14,11 +14,24 @@ import {
 } from "@/data/student-actions";
 import { getMergedActionsByStudentSapId } from "@/data/student-actions-store";
 import { getInterventionsByStudentSapId } from "@/data/intervention-store";
+import { readFile } from "fs/promises";
+import path from "path";
+import type { EnrollmentRecord } from "@/lib/enrollment";
 
 type PropsType = {
   params: Promise<{ id: string }>;
   searchParams: Promise<{ from?: string }>;
 };
+
+async function getEnrollmentForStudentSapId(
+  sapId: string
+): Promise<EnrollmentRecord[]> {
+  const dataPath = path.join(process.cwd(), "public", "enrollment_data.json");
+  const raw = await readFile(dataPath, "utf-8");
+  const data = JSON.parse(raw) as EnrollmentRecord[];
+  if (!Array.isArray(data)) return [];
+  return data.filter((r) => r.SapNo === sapId);
+}
 
 export async function generateMetadata({ params }: PropsType): Promise<Metadata> {
   const { id } = await params;
@@ -194,18 +207,41 @@ export default async function StudentPage({ params, searchParams }: PropsType) {
   const resolvedSearchParams = await searchParams;
   const returnToUrl = resolvedSearchParams.from && resolvedSearchParams.from.startsWith("/") ? resolvedSearchParams.from : "/";
   const student = await getStudentBySapId(id);
-
   if (!student) notFound();
 
   const report = generateAlertReport(student);
 
   const actionHistory = getMergedActionsByStudentSapId(student.sap_id);
-  const interventionHistory = getInterventionsByStudentSapId(student.sap_id);
+  const interventionHistory = await getInterventionsByStudentSapId(student.sap_id);
 
   // Calculate metrics
   const attendanceDiff =
     student.attendance.attendance_percentage - student.attendance.class_average_attendance;
   const gpaDiff = student.gpa.current - (report.gpa_comparison.class_average_current || 0);
+
+  const sapIdFromUrl = id;
+  const enrollmentRecords = await getEnrollmentForStudentSapId(sapIdFromUrl);
+  const primaryEnrollment = enrollmentRecords[0] ?? null;
+  const courseSummaries = (() => {
+    const map = new Map<
+      string,
+      { code: string; title: string; teacher: string | null }
+    >();
+    for (const r of enrollmentRecords) {
+      const code = r.CrCode ?? "";
+      const title = r.CrTitle ?? "";
+      const key = code || title;
+      if (!key) continue;
+      if (!map.has(key)) {
+        map.set(key, {
+          code: code || "—",
+          title: title || "—",
+          teacher: r.Teacher ?? null,
+        });
+      }
+    }
+    return Array.from(map.values());
+  })();
 
   return (
     <div className="w-full space-y-6 mt-4">
@@ -231,47 +267,31 @@ export default async function StudentPage({ params, searchParams }: PropsType) {
           </div>
           
           <div className="relative flex flex-col gap-6 sm:flex-row sm:items-center">
-            <div className="relative">
-              <div className="h-24 w-24 overflow-hidden rounded-2xl border-4 border-white/20 shadow-xl">
-                <Image
-                  src="/images/user/user-03.png"
-                  width={96}
-                  height={96}
-                  className="h-full w-full object-cover"
-                  alt={student.name}
-                />
-              </div>
-           
-              <div
-                className={cn(
-                  "absolute -bottom-1 -right-1 flex h-6 w-6 items-center justify-center rounded-full border-2 border-white text-xs",
-                  student.overall_alert === "critical"
-                    ? "bg-red-500"
-                    : student.overall_alert === "warning"
-                    ? "bg-amber-500"
-                    : "bg-emerald-500"
-                )}
-              >
-                {student.overall_alert === "none" ? "✓" : "!"}
-              </div>
-            </div>
             
             <div className="flex-1 text-white">
-              <h1 className="text-2xl font-bold sm:text-3xl">{student.name}</h1>
+              <h1 className="text-2xl font-bold sm:text-3xl">
+                {primaryEnrollment?.Name ?? student.name}
+              </h1>
               <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-white">
-                <span className="flex items-center gap-1.5">
-                  <span className="text-xs opacity-70">SAP ID</span>
-                  <span className="font-mono font-medium">{student.sap_id}</span>
+                <span className="flex  flex-col gap-1.5 border-r border-white/20 pr-4">
+                  <span className="text-base">SAP ID:</span>
+                  <span className="text-base font-medium">
+                    {primaryEnrollment?.SapNo ?? sapIdFromUrl}
+                  </span>
                 </span>
-                <span className="hidden sm:inline opacity-40">|</span>
-                <span className="flex items-center gap-1.5">
-                  <span className="text-xs opacity-70">Course</span>
-                  <span className="font-medium">{student.course_id}</span>
+                <span className="flex  flex-col gap-1.5 border-r border-white/20 pr-4">
+                  <span className="text-base">Program:</span>
+                  <span className="font-medium">
+                    {primaryEnrollment?.DegreeTitle ??
+                      primaryEnrollment?.DegreeCode ??
+                      student.course_id}
+                  </span>
                 </span>
-                <span className="hidden sm:inline opacity-40">|</span>
-                <span className="flex items-center gap-1.5">
-                  <span className="text-xs opacity-70">Dept</span>
-                  <span className="font-medium">{student.department_id}</span>
+                <span className="flex  flex-col gap-1.5 ">
+                  <span className="text-base">Department:</span>
+                  <span className="font-medium">
+                    {primaryEnrollment?.DeptName ?? student.department_id}
+                  </span>
                 </span>
               </div>
             </div>
@@ -362,7 +382,42 @@ export default async function StudentPage({ params, searchParams }: PropsType) {
               </div>
             </div>
 
-          
+            {courseSummaries.length > 0 && (
+              <div className="mt-2 space-y-3">
+                <h4 className="text-sm font-semibold text-gray-900 dark:text-white">
+                  Attendance details (courses)
+                </h4>
+                <div className="max-h-64 overflow-y-auto rounded-xl border border-gray-200 bg-white/50 dark:border-gray-700 dark:bg-gray-900/20">
+                  <table className="min-w-full text-left text-xs sm:text-sm">
+                    <thead>
+                      <tr className="border-b border-gray-200 bg-gray-50 text-gray-600 dark:border-gray-700 dark:bg-gray-800">
+                        <th className="px-4 py-2 font-semibold">Course</th>
+                        <th className="px-4 py-2 font-semibold">Code</th>
+                        <th className="px-4 py-2 font-semibold">Instructor</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {courseSummaries.map((c) => (
+                        <tr
+                          key={`${c.code}-${c.title}`}
+                          className="border-b border-gray-100 last:border-0 dark:border-gray-800"
+                        >
+                          <td className="px-4 py-2 text-gray-900 dark:text-gray-100">
+                            {c.title}
+                          </td>
+                          <td className="px-4 py-2 font-mono text-gray-700 dark:text-gray-300">
+                            {c.code}
+                          </td>
+                          <td className="px-4 py-2 text-gray-700 dark:text-gray-300">
+                            {c.teacher ?? "—"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 

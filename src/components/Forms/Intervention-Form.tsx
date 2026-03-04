@@ -130,8 +130,8 @@ const InterventionForm = ({
       {/* 2. Outreach Mode */}
       <SelectField
         id={outreachId}
-        label="Outreach Mode"
-        placeholder="Select outreach mode"
+        label="Mode"
+        placeholder="Select mode"
         value={outreachMode}
         onChange={setOutreachMode}
         items={OUTREACH_MODES.map((o) => ({ value: o.value, label: o.label }))}
