@@ -24,7 +24,17 @@ const INTERVENTION_STATUS_OPTIONS: { value: string; label: string }[] = [
   { value: "referred", label: "Referred" },
   { value: "resolved", label: "Resolved" },
 ];
-
+const RESOLUTION_STATUS_OPTIONS: { value: string; label: string }[] = [
+  { value: "all", label: "All" },
+  { value: "not_started", label: "Counselling (Open)" },
+  { value: "not_started", label: "Counselling (Closed)" },
+  { value: "initiated", label: "Monitoring (Open)" },
+  { value: "initiated", label: "Monitoring (Closed)" },
+  { value: "in_progress", label: "Flex-Academic (Open)" },
+  { value: "in_progress", label: "Flex-Academic (Closed)" },
+  { value: "referred", label: "Flex-Financial (Open)" },
+  { value: "referred", label: "Flex-Financial (Closed)" },
+];
 type PropsType = {
   options: MasterFilterOptions;
   current: MasterFilterParams;
@@ -33,14 +43,25 @@ type PropsType = {
   gpaFilters: AlertDimensionFilter[];
   attendanceFilters: AlertDimensionFilter[];
   interventionFilters: string[];
+  resolutionFilters: string[];
+  interventionStatusFilters: string[];
   className?: string;
   onChangeMasterFilter?: (updates: Partial<MasterFilterParams>) => void;
   onChangeGpaFilters?: (values: AlertDimensionFilter[]) => void;
   onChangeAttendanceFilters?: (values: AlertDimensionFilter[]) => void;
   onChangeInterventionFilters?: (values: string[]) => void;
+  onChangeResolutionFilters?: (values: string[]) => void;
 };
 
-type FilterKey = "department" | "program" | "course" | "instructor" | "attendance" | "gpa" | "intervention";
+type FilterKey =
+  | "department"
+  | "program"
+  | "course"
+  | "instructor"
+  | "attendance"
+  | "gpa"
+  | "intervention"
+  | "resolution";
 
 function FilterMultiSelect({
   label,
@@ -138,11 +159,13 @@ export function MasterFilter({
   gpaFilters,
   attendanceFilters,
   interventionFilters,
+  resolutionFilters,
   className,
   onChangeMasterFilter,
   onChangeGpaFilters,
   onChangeAttendanceFilters,
   onChangeInterventionFilters,
+  onChangeResolutionFilters,
 }: PropsType) {
   const [openFilter, setOpenFilter] = useState<FilterKey | null>(null);
   const filterPanelRef = useClickOutside<HTMLDivElement>(() => setOpenFilter(null));
@@ -191,6 +214,10 @@ export function MasterFilter({
     onChangeInterventionFilters?.(values);
   };
 
+  const handleResolutionFilters = (values: string[]) => {
+    onChangeResolutionFilters?.(values);
+  };
+
   if (!role) return null;
 
   const showDepartment = role === "dean" || role === "hod";
@@ -217,6 +244,7 @@ export function MasterFilter({
     onChangeGpaFilters?.([]);
     onChangeAttendanceFilters?.([]);
     onChangeInterventionFilters?.([]);
+    onChangeResolutionFilters?.([]);
   };
 
   const toggleFilter = (key: FilterKey) => () =>
@@ -303,6 +331,15 @@ export function MasterFilter({
         isOpen={openFilter === "intervention"}
         onOpenChange={toggleFilter("intervention")}
         data-testid="filter-intervention"
+      />
+       <FilterMultiSelect
+        label="Resolution"
+        selected={resolutionFilters ?? []}
+        items={RESOLUTION_STATUS_OPTIONS}
+        onChange={handleResolutionFilters}
+        isOpen={openFilter === "resolution"}
+        onOpenChange={toggleFilter("resolution")}
+        data-testid="filter-resolution"
       />
 
       <div className="flex flex-col gap-1.5 absolute right-4 bottom-4">
