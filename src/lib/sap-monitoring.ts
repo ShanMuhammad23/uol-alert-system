@@ -87,7 +87,8 @@ export async function fetchMonitoringEntries(
   });
 
   if (!res.ok) {
-    throw new Error(`SAP monitoring API error: ${res.status} ${res.statusText}`);
+    console.error(`SAP monitoring API error: ${res.status} ${res.statusText}`);
+    return [];
   }
 
   const xml = await res.text();

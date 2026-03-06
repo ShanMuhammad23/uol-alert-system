@@ -5,7 +5,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { cn } from "@/lib/utils";
 import type { Metadata } from "next";
-import { CampaignVisitorsChart } from "@/components/Charts/campaign-visitors/chart";
+import { CampaignVisitorsChart } from "@/components/Charts/intervention-status-chart/chart";
 import { InterventionHistorySection } from "./_components/InterventionHistorySection";
 import {
   getActionsByStudentSapId,

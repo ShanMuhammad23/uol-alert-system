@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useMemo, useState } from "react";
 import { useEnrollmentData } from "@/hooks/useEnrollmentData";
 import {
   getDepartmentStats,
@@ -14,12 +14,15 @@ import type {
   MasterFilterParams,
   DashboardUser,
 } from "@/lib/enrollment";
+import type { AlertDimensionFilter } from "../fetch";
 import { MasterFilter } from "./master-filter";
 import { DeanStatsCollapsible } from "./dean-stats-collapsible";
 import { DeanDepartmentStats } from "./dean-department-stats";
 import { DeanProgramStats } from "./dean-program-stats";
 import { DeanInstructorStats } from "./dean-instructor-stats";
-import { TopChannelsTableClient } from "@/components/Tables/top-channels/TopChannelsTableClient";
+import { TopChannelsTableClient } from "@/components/Tables/nested-students-table/TopChannelsTableClient";
+import { NestedEnrollmentTableClient } from "@/components/Tables/nested-students-table/NestedEnrollmentTableClient";
+import { ExpandableListUrlSync } from "./ExpandableListUrlSync";
 import { StudentsViewTabs } from "./StudentsViewTabs";
 
 type Props = {
@@ -27,16 +30,16 @@ type Props = {
   masterFilter: MasterFilterParams;
   filterOptionsFromServer: MasterFilterOptions;
   selectedAlert: string;
-  gpaFilters: ("all" | "red" | "yellow" | "good")[];
-  attendanceFilters: ("all" | "red" | "yellow" | "good")[];
+  gpaFilters: AlertDimensionFilter[];
+  attendanceFilters: AlertDimensionFilter[];
   interventionFilters: string[];
   returnToUrl: string;
   departmentIds: string[];
   programIds: string[];
   instructorIds: string[];
   viewMode: "table" | "nested";
-  /** Rendered when viewMode !== "table" (nested view). */
-  nestedView?: ReactNode;
+  /** Section IDs to expand in nested view (e.g. from URL ?expanded=). */
+  expandedIds?: string[];
 };
 
 export function EnrollmentDashboard({
@@ -52,14 +55,31 @@ export function EnrollmentDashboard({
   programIds,
   instructorIds,
   viewMode,
-  nestedView,
+  expandedIds = [],
 }: Props) {
   const { data: enrollmentData } = useEnrollmentData();
 
-  const filterOptions: MasterFilterOptions =
-    enrollmentData?.length && user.role
-      ? getMasterFilterOptions(enrollmentData, user.faculty_id ?? undefined, masterFilter)
-      : filterOptionsFromServer;
+  // Local, client-side filter state to avoid full route transitions on every change.
+  const [localMasterFilter, setLocalMasterFilter] =
+    useState<MasterFilterParams>(masterFilter);
+  const [localGpaFilters, setLocalGpaFilters] =
+    useState<AlertDimensionFilter[]>(gpaFilters);
+  const [localAttendanceFilters, setLocalAttendanceFilters] =
+    useState<AlertDimensionFilter[]>(attendanceFilters);
+  const [localInterventionFilters, setLocalInterventionFilters] = useState<
+    string[]
+  >(interventionFilters);
+
+  const filterOptions: MasterFilterOptions = useMemo(() => {
+    if (enrollmentData?.length && user.role) {
+      return getMasterFilterOptions(
+        enrollmentData,
+        user.faculty_id ?? undefined,
+        localMasterFilter,
+      );
+    }
+    return filterOptionsFromServer;
+  }, [enrollmentData, user.role, user.faculty_id, localMasterFilter, filterOptionsFromServer]);
 
   const departmentStats =
     enrollmentData?.length && user.role === "dean"
@@ -74,13 +94,27 @@ export function EnrollmentDashboard({
   const instructorStats =
     enrollmentData?.length && user.role === "dean"
       ? getInstructorStats(enrollmentData, user.faculty_id, {
-          departmentIds: departmentIds.length ? departmentIds : undefined,
-          instructorIds: instructorIds.length ? instructorIds : undefined,
+          departmentIds:
+            localMasterFilter.department_ids?.length
+              ? localMasterFilter.department_ids
+              : departmentIds.length
+                ? departmentIds
+                : undefined,
+          instructorIds:
+            localMasterFilter.instructor_ids?.length
+              ? localMasterFilter.instructor_ids
+              : instructorIds.length
+                ? instructorIds
+                : undefined,
         })
       : undefined;
   const filteredData =
     enrollmentData?.length && user.role
-      ? filterEnrollmentByMasterFilter(enrollmentData, masterFilter, user.faculty_id ?? undefined)
+      ? filterEnrollmentByMasterFilter(
+          enrollmentData,
+          localMasterFilter,
+          user.faculty_id ?? undefined,
+        )
       : undefined;
 
   return (
@@ -94,25 +128,51 @@ export function EnrollmentDashboard({
               departmentContent={
                 <DeanDepartmentStats
                   user={user}
-                  selectedDepartmentId={departmentIds[0]}
-                  masterFilterDepartmentIds={departmentIds.length ? departmentIds : undefined}
+                  selectedDepartmentId={
+                    localMasterFilter.department_ids?.[0] ?? departmentIds[0]
+                  }
+                  masterFilterDepartmentIds={
+                    localMasterFilter.department_ids?.length
+                      ? localMasterFilter.department_ids
+                      : departmentIds.length
+                        ? departmentIds
+                        : undefined
+                  }
                   stats={departmentStats}
                 />
               }
               programContent={
                 <DeanProgramStats
                   user={user}
-                  selectedProgramId={programIds[0]}
-                  masterFilterProgramIds={programIds.length ? programIds : undefined}
-                  masterFilterDepartmentIds={departmentIds.length ? departmentIds : undefined}
+                  selectedProgramId={
+                    localMasterFilter.programs?.[0] ?? programIds[0]
+                  }
+                  masterFilterProgramIds={
+                    localMasterFilter.programs?.length
+                      ? localMasterFilter.programs
+                      : programIds.length
+                        ? programIds
+                        : undefined
+                  }
+                  masterFilterDepartmentIds={
+                    localMasterFilter.department_ids?.length
+                      ? localMasterFilter.department_ids
+                      : departmentIds.length
+                        ? departmentIds
+                        : undefined
+                  }
                   stats={programStats}
                 />
               }
               instructorContent={
                 <DeanInstructorStats
                   user={user}
-                  selectedDepartmentId={departmentIds[0]}
-                  selectedInstructorId={instructorIds[0]}
+                  selectedDepartmentId={
+                    localMasterFilter.department_ids?.[0] ?? departmentIds[0]
+                  }
+                  selectedInstructorId={
+                    localMasterFilter.instructor_ids?.[0] ?? instructorIds[0]
+                  }
                   stats={instructorStats}
                 />
               }
@@ -124,12 +184,25 @@ export function EnrollmentDashboard({
       <div className="mb-4">
         <MasterFilter
           options={filterOptions}
-          current={masterFilter}
+          current={localMasterFilter}
           role={user.role}
           selectedAlert={selectedAlert}
-          gpaFilters={gpaFilters}
-          attendanceFilters={attendanceFilters}
-          interventionFilters={interventionFilters}
+          gpaFilters={localGpaFilters}
+          attendanceFilters={localAttendanceFilters}
+          interventionFilters={localInterventionFilters}
+          onChangeMasterFilter={(updates) =>
+            setLocalMasterFilter((prev) => ({
+              ...prev,
+              ...updates,
+            }))
+          }
+          onChangeGpaFilters={(values) => setLocalGpaFilters(values)}
+          onChangeAttendanceFilters={(values) =>
+            setLocalAttendanceFilters(values)
+          }
+          onChangeInterventionFilters={(values) =>
+            setLocalInterventionFilters(values)
+          }
         />
       </div>
 
@@ -143,7 +216,13 @@ export function EnrollmentDashboard({
             enrollmentData={filteredData ?? null}
           />
         ) : (
-          nestedView
+          <ExpandableListUrlSync>
+            <NestedEnrollmentTableClient
+              returnToUrl={returnToUrl}
+              enrollmentData={filteredData ?? null}
+              expandedIds={expandedIds}
+            />
+          </ExpandableListUrlSync>
         )}
       </div>
     </>

@@ -23,7 +23,7 @@ const Chart = dynamic(() => import("react-apexcharts"), {
 
 const DEFAULT_BAR_COLOR = "#94A3B8";
 
-export function CampaignVisitorsChart({
+export function InterventionStatusChart({
   title,
   data,
   statusColors,

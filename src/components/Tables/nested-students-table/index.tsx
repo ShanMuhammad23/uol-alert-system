@@ -357,7 +357,7 @@ function groupStudentsForHodInstructors(
   return result;
 }
 
-export async function TopChannels({
+export async function NestedStudentsTable({
   className,
   returnToUrl = "/",
   expandedIds = [],

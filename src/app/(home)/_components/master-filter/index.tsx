@@ -1,11 +1,13 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useClickOutside } from "@/hooks/use-click-outside";
-import { saveScrollBeforeFilterNav } from "../FilterScrollPreserve";
 import { cn } from "@/lib/utils";
-import type { MasterFilterParams, MasterFilterOptions, AlertDimensionFilter } from "../../fetch";
+import type {
+  MasterFilterParams,
+  MasterFilterOptions,
+  AlertDimensionFilter,
+} from "../../fetch";
 
 const GPA_ATTENDANCE_OPTIONS: { value: AlertDimensionFilter; label: string }[] = [
   { value: "all", label: "All" },
@@ -32,6 +34,10 @@ type PropsType = {
   attendanceFilters: AlertDimensionFilter[];
   interventionFilters: string[];
   className?: string;
+  onChangeMasterFilter?: (updates: Partial<MasterFilterParams>) => void;
+  onChangeGpaFilters?: (values: AlertDimensionFilter[]) => void;
+  onChangeAttendanceFilters?: (values: AlertDimensionFilter[]) => void;
+  onChangeInterventionFilters?: (values: string[]) => void;
 };
 
 type FilterKey = "department" | "program" | "course" | "instructor" | "attendance" | "gpa" | "intervention";
@@ -133,63 +139,57 @@ export function MasterFilter({
   attendanceFilters,
   interventionFilters,
   className,
+  onChangeMasterFilter,
+  onChangeGpaFilters,
+  onChangeAttendanceFilters,
+  onChangeInterventionFilters,
 }: PropsType) {
-  const router = useRouter();
   const [openFilter, setOpenFilter] = useState<FilterKey | null>(null);
   const filterPanelRef = useClickOutside<HTMLDivElement>(() => setOpenFilter(null));
 
-  const buildUrl = (updates: {
-    department_ids?: string[];
-    programs?: string[];
-    instructor_ids?: string[];
-    course_ids?: string[];
-    gpa_filters?: AlertDimensionFilter[];
-    attendance_filters?: AlertDimensionFilter[];
-    intervention_filters?: string[];
-  }) => {
-    const params = new URLSearchParams();
-    if (selectedAlert && selectedAlert !== "all") params.set("selected_alert", selectedAlert);
-
-    const depts = updates.department_ids !== undefined ? updates.department_ids : (current.department_ids ?? []);
-    const progs = updates.programs !== undefined ? updates.programs : (current.programs ?? []);
-    const inst = updates.instructor_ids !== undefined ? updates.instructor_ids : (current.instructor_ids ?? []);
-    const crs = updates.course_ids !== undefined ? updates.course_ids : (current.course_ids ?? []);
-    const gpa = updates.gpa_filters !== undefined ? updates.gpa_filters : (gpaFilters ?? []);
-    const att = updates.attendance_filters !== undefined ? updates.attendance_filters : (attendanceFilters ?? []);
-    const intervention = updates.intervention_filters !== undefined ? updates.intervention_filters : (interventionFilters ?? []);
-
-    if (depts.length) params.set("department", depts.join(","));
-    if (progs.length) params.set("program", progs.join(","));
-    if (inst.length) params.set("instructor", inst.join(","));
-    if (crs.length) params.set("course", crs.join(","));
-    if (gpa.length) params.set("gpa_filter", gpa.join(","));
-    if (att.length) params.set("attendance_filter", att.join(","));
-    if (intervention.length) params.set("intervention_filter", intervention.join(","));
-
-    const qs = params.toString();
-    return qs ? `/?${qs}` : "/";
+  // When parent filter changes, clear child selections so options stay in sync.
+  // These handlers update local state in the parent via callbacks instead of navigating.
+  const handleDepartment = (values: string[]) => {
+    onChangeMasterFilter?.({
+      department_ids: values.length ? values : undefined,
+      programs: undefined,
+      course_ids: undefined,
+      instructor_ids: undefined,
+    });
   };
 
-  const navigate = (url: string) => {
-    saveScrollBeforeFilterNav();
-    router.replace(url, { scroll: false });
+  const handleProgram = (values: string[]) => {
+    onChangeMasterFilter?.({
+      programs: values.length ? values : undefined,
+      course_ids: undefined,
+      instructor_ids: undefined,
+    });
   };
 
-  // When parent filter changes, clear child selections so options stay in sync
-  const handleDepartment = (values: string[]) =>
-    navigate(buildUrl({ department_ids: values, programs: [], course_ids: [], instructor_ids: [] }));
-  const handleProgram = (values: string[]) =>
-    navigate(buildUrl({ programs: values, course_ids: [], instructor_ids: [] }));
-  const handleCourse = (values: string[]) =>
-    navigate(buildUrl({ course_ids: values, instructor_ids: [] }));
-  const handleInstructor = (values: string[]) =>
-    navigate(buildUrl({ instructor_ids: values }));
-  const handleGpaFilters = (values: string[]) =>
-    navigate(buildUrl({ gpa_filters: values as AlertDimensionFilter[] }));
-  const handleAttendanceFilters = (values: string[]) =>
-    navigate(buildUrl({ attendance_filters: values as AlertDimensionFilter[] }));
-  const handleInterventionFilters = (values: string[]) =>
-    navigate(buildUrl({ intervention_filters: values }));
+  const handleCourse = (values: string[]) => {
+    onChangeMasterFilter?.({
+      course_ids: values.length ? values : undefined,
+      instructor_ids: undefined,
+    });
+  };
+
+  const handleInstructor = (values: string[]) => {
+    onChangeMasterFilter?.({
+      instructor_ids: values.length ? values : undefined,
+    });
+  };
+
+  const handleGpaFilters = (values: string[]) => {
+    onChangeGpaFilters?.(values as AlertDimensionFilter[]);
+  };
+
+  const handleAttendanceFilters = (values: string[]) => {
+    onChangeAttendanceFilters?.(values as AlertDimensionFilter[]);
+  };
+
+  const handleInterventionFilters = (values: string[]) => {
+    onChangeInterventionFilters?.(values);
+  };
 
   if (!role) return null;
 
@@ -207,7 +207,17 @@ export function MasterFilter({
     (attendanceFilters?.length ?? 0) > 0 ||
     (interventionFilters?.length ?? 0) > 0;
 
-  const handleClearAll = () => navigate("/");
+  const handleClearAll = () => {
+    onChangeMasterFilter?.({
+      department_ids: undefined,
+      programs: undefined,
+      instructor_ids: undefined,
+      course_ids: undefined,
+    });
+    onChangeGpaFilters?.([]);
+    onChangeAttendanceFilters?.([]);
+    onChangeInterventionFilters?.([]);
+  };
 
   const toggleFilter = (key: FilterKey) => () =>
     setOpenFilter((prev) => (prev === key ? null : key));

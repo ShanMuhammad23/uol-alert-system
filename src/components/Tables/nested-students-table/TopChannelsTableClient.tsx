@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import {
   Table,
   TableBody,
@@ -36,6 +36,23 @@ type SortKey =
 
 type SortDirection = "asc" | "desc";
 
+/**
+ * Deduplicate enrollment records by unique ID
+ * This fixes the bug where duplicate records (like Hafiz Shabbir Ahmed and Hafiz Ismail)
+ * were appearing multiple times regardless of filters
+ */
+function deduplicateEnrollments(data: EnrollmentRecord[]): EnrollmentRecord[] {
+  const seen = new Set<string>();
+  return data.filter((record) => {
+    const id = record.Id ?? `${record.SapNo}-${record.CrCode}-${record.Section}`;
+    if (seen.has(id)) {
+      return false;
+    }
+    seen.add(id);
+    return true;
+  });
+}
+
 export function TopChannelsTableClient({
   className,
   returnToUrl = "/",
@@ -48,8 +65,20 @@ export function TopChannelsTableClient({
     { key: SortKey; direction: SortDirection } | null
   >(null);
 
+  // Track previous prop data to detect actual changes
+  const prevPropDataRef = useRef<EnrollmentRecord[] | null | undefined>(null);
+
+  // CRITICAL FIX: Always deduplicate prop data to prevent duplicate records
   const hasPropData = enrollmentDataProp != null && Array.isArray(enrollmentDataProp);
-  const displayEnrollments = hasPropData ? enrollmentDataProp : enrollments;
+  
+  // Apply deduplication to prevent Hafiz Shabbir Ahmed and Hafiz Ismail duplicates
+  const deduplicatedPropData = useMemo(() => {
+    if (!hasPropData) return [];
+    return deduplicateEnrollments(enrollmentDataProp);
+  }, [enrollmentDataProp, hasPropData]);
+
+  // Use deduplicated data when prop is provided, otherwise use fetched state
+  const displayEnrollments = hasPropData ? deduplicatedPropData : enrollments;
 
   const { data: monitoringData } = useMonitoringStudents();
 
@@ -156,11 +185,31 @@ export function TopChannelsTableClient({
   };
 
   useEffect(() => {
-    if (hasPropData) {
+    // CRITICAL FIX: Check if prop data has actually changed to prevent stale renders
+    const propDataChanged = 
+      enrollmentDataProp !== prevPropDataRef.current ||
+      (enrollmentDataProp && prevPropDataRef.current && 
+       enrollmentDataProp.length !== prevPropDataRef.current.length);
+
+    if (hasPropData && !propDataChanged) {
+      // Data hasn't changed, skip processing
       setIsLoading(false);
-      setError(null);
       return;
     }
+
+    // Update ref to current prop data
+    prevPropDataRef.current = enrollmentDataProp;
+
+    if (hasPropData) {
+      // Prop data provided - use it directly (deduplicated via useMemo above)
+      setIsLoading(false);
+      setError(null);
+      // Clear internal state when using props to prevent stale data mixing
+      setEnrollments([]);
+      return;
+    }
+
+    // No prop data - fetch from API
     let cancelled = false;
     fetch("/api/enrollment", { cache: "no-store" })
       .then((res) => {
@@ -170,7 +219,9 @@ export function TopChannelsTableClient({
       .then((raw: unknown) => {
         if (cancelled) return;
         const list = Array.isArray(raw) ? (raw as EnrollmentRecord[]) : [];
-        setEnrollments(list);
+        // Also deduplicate fetched data
+        const deduplicated = deduplicateEnrollments(list);
+        setEnrollments(deduplicated);
         setError(null);
       })
       .catch((err) => {
@@ -184,12 +235,15 @@ export function TopChannelsTableClient({
     };
   }, [enrollmentDataProp]);
 
-  // Total student count = number of objects (enrollment records) per course (CrCode)
-  const courseIdToStudentCount = new Map<string, number>();
-  for (const e of displayEnrollments) {
-    const key = e.CrCode ?? e.CrTitle ?? "";
-    courseIdToStudentCount.set(key, (courseIdToStudentCount.get(key) ?? 0) + 1);
-  }
+  // Calculate student count per course
+  const courseIdToStudentCount = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const e of displayEnrollments) {
+      const key = e.CrCode ?? e.CrTitle ?? "";
+      map.set(key, (map.get(key) ?? 0) + 1);
+    }
+    return map;
+  }, [displayEnrollments]);
 
   if (!hasPropData && isLoading) {
     return <TopChannelsSkeleton />;

@@ -1,5 +1,3 @@
-import { TopChannels } from "@/components/Tables/top-channels";
-import { TopChannelsSkeleton } from "@/components/Tables/top-channels/skeleton";
 import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { OverviewCardsGroup } from "./_components/overview-cards";
@@ -9,9 +7,9 @@ import type { MasterFilterParams, AlertDimensionFilter } from "./fetch";
 import { HodStatsCollapsible } from "./_components/hod-stats-collapsible";
 import { HodProgramStats } from "./_components/hod-program-stats";
 import { HodInstructorStats } from "./_components/hod-instructor-stats";
-import { CampaignVisitorsChart } from "@/components/Charts/campaign-visitors/chart";
+import { InterventionStatusChart } from "@/components/Charts/intervention-status-chart/chart";
+import { StatusStackedChart } from "@/components/Charts/status-stacked-chart/chart";
 import { getInterventionChartData } from "./fetch";
-import { ExpandableListUrlSync } from "./_components/ExpandableListUrlSync";
 import { FilterScrollPreserve } from "./_components/FilterScrollPreserve";
 import { EnrollmentDashboard } from "./_components/EnrollmentDashboard";
 
@@ -69,7 +67,6 @@ export default async function Home({ searchParams }: PropsType) {
   const attendanceFilters = attendanceFiltersRaw.filter(validAlertDim) as AlertDimensionFilter[];
   const interventionFilters = parseMultiParam(params.intervention_filter);
 
-  const filterKey = [selectedAlert, ...departmentIds, ...programs, ...instructorIds, ...courseIds, params.gpa_filter, params.attendance_filter, params.intervention_filter].join("-");
   const filterOptions = await getMasterFilterOptions(user, masterFilter);
   const interventionChart = await getInterventionChartData(
     user,
@@ -107,7 +104,7 @@ export default async function Home({ searchParams }: PropsType) {
       </Suspense>
       {/* Row 1: Overview cards + Charts in one row */}
       <div className="mt-4 grid grid-cols-12 gap-4 md:mt-6 bg-white dark:bg-gray-800 rounded-lg p-4 shadow-1">
-        <div className="col-span-12 md:col-span-6">
+        <div className="col-span-12 md:col-span-4">
           <Suspense fallback={<OverviewCardsSkeleton />}>
             <OverviewCardsGroup
               selectedAlert={selectedAlert}
@@ -118,13 +115,16 @@ export default async function Home({ searchParams }: PropsType) {
             />
           </Suspense>
         </div>
-        <div className=" col-span-12 md:col-span-6">
-      <CampaignVisitorsChart
+        <div className=" col-span-12 md:col-span-4">
+      <InterventionStatusChart
             data={interventionChart.data}
             statusColors={interventionChart.statusColors}
             title="Outreach & Intervention Status"
           />
       </div>
+        <div className="col-span-12 md:col-span-4 ">
+          <StatusStackedChart title="Wellbeing Resolution Status" />
+        </div>
       </div>
     
             <div className="mt-4 mb-4 grid grid-cols-12 gap-4">
@@ -164,26 +164,7 @@ export default async function Home({ searchParams }: PropsType) {
         programIds={programs}
         instructorIds={instructorIds}
         viewMode={viewMode}
-        nestedView={
-          viewMode !== "table" ? (
-            <Suspense fallback={<TopChannelsSkeleton />} key={filterKey}>
-              <ExpandableListUrlSync>
-                <TopChannels
-                  returnToUrl={returnToUrl}
-                  expandedIds={expandedIds}
-                  selectedAlert={selectedAlert}
-                  user={user}
-                  masterFilter={masterFilter}
-                  gpaFilters={gpaFilters}
-                  attendanceFilters={attendanceFilters}
-                  interventionFilters={interventionFilters}
-                  sortBy={sortBy}
-                  sortOrder={sortOrder}
-                />
-              </ExpandableListUrlSync>
-            </Suspense>
-          ) : undefined
-        }
+        expandedIds={expandedIds}
       />
     </>
   );
