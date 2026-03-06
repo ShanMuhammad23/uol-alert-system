@@ -357,6 +357,7 @@
       "email": "dean@uol.edu.pk",
       "password": "demo123",
       "role": "dean",
+      "picture":"/images/Prof.-Dr.-Rabia-Akhtar-Social Sciences.png",
       "faculty_id": "50000172",
       "department_id": null,
       "course_ids": null

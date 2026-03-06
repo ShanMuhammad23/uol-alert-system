@@ -367,7 +367,13 @@ export default async function StudentPage({ params, searchParams }: PropsType) {
               }
             />
 
-            <div className="grid grid-cols-2 gap-4 rounded-xl bg-gray-50 p-4 dark:bg-gray-800/50">
+            <div className="grid grid-cols-3 gap-4 rounded-xl bg-gray-50 p-4 dark:bg-gray-800/50">
+            <div className="text-center">
+                <p className="text-2xl font-bold  dark:text-green-500">
+                  {student.attendance.total_classes_held}
+                </p>
+                <p className="text-xs  dark:text-green-500">Classes Held</p>
+              </div>
               <div className="text-center">
                 <p className="text-2xl font-bold text-green-500 dark:text-green-500">
                   {student.attendance.classes_attended}
@@ -391,9 +397,10 @@ export default async function StudentPage({ params, searchParams }: PropsType) {
                   <table className="min-w-full text-left text-xs sm:text-sm">
                     <thead>
                       <tr className="border-b border-gray-200 bg-gray-50 text-gray-600 dark:border-gray-700 dark:bg-gray-800">
-                        <th className="px-4 py-2 font-semibold">Course</th>
-                        <th className="px-4 py-2 font-semibold">Code</th>
+                        <th className="px-4 py-2 font-semibold">Course- Code</th>
                         <th className="px-4 py-2 font-semibold">Instructor</th>
+                        <th className="px-4 py-2 font-semibold">Attendance</th>
+                        
                       </tr>
                     </thead>
                     <tbody>
@@ -403,13 +410,14 @@ export default async function StudentPage({ params, searchParams }: PropsType) {
                           className="border-b border-gray-100 last:border-0 dark:border-gray-800"
                         >
                           <td className="px-4 py-2 text-gray-900 dark:text-gray-100">
-                            {c.title}
+                            {c.title} - {c.code}
                           </td>
-                          <td className="px-4 py-2 font-mono text-gray-700 dark:text-gray-300">
-                            {c.code}
-                          </td>
+                          
                           <td className="px-4 py-2 text-gray-700 dark:text-gray-300">
                             {c.teacher ?? "—"}
+                          </td>
+                          <td className="px-4 text-center py-2 text-gray-700 dark:text-gray-300">
+                            -%
                           </td>
                         </tr>
                       ))}

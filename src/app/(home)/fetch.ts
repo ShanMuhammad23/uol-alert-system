@@ -137,6 +137,7 @@ export type Course = {
 
 export type AppUser = {
   id: string;
+  picture: string;
   sap_id: string;
   name: string;
   email: string;
@@ -209,8 +210,23 @@ export async function getOverviewData(
     (s) => s.overall_alert === "critical" || s.overall_alert === "warning"
   ).length;
 
+  // For faculty (dean) views, define total students as:
+  // sum of the student counts of every department under that faculty,
+  // based on enrollment_data.json (unique students per department).
+  let totalStudents = students.length;
+  if (user?.role === "dean" && user.faculty_id) {
+    try {
+      const deptStats = await getDepartmentStatsFromEnrollment(user.faculty_id);
+      if (deptStats.length) {
+        totalStudents = deptStats.reduce((sum, d) => sum + d.total, 0);
+      }
+    } catch {
+      totalStudents = students.length;
+    }
+  }
+
   return {
-    totalStudents: students.length,
+    totalStudents,
     earlyAlertCount,
     yellowGpa: { value: yellowGpa },
     redGpa: { value: redGpa },
@@ -219,7 +235,7 @@ export async function getOverviewData(
   };
 }
 
-/** Derive GPA alert_level from gpa.change using thresholds: drop >= 1 = red, drop >= 0.5 = yellow */
+
 function applyGpaAlertThreshold(student: Student): void {
   const drop = Math.abs(Math.min(0, student.gpa.change));
   if (drop >= THRESHOLDS.gpa.critical_drop) {

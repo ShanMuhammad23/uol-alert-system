@@ -12,6 +12,7 @@ import {
 import { cn } from "@/lib/utils";
 import type { EnrollmentRecord } from "@/lib/enrollment";
 import { useMonitoringStudents } from "@/hooks/useMonitoringStudents";
+import { ArrowDownIcon, ArrowUpIcon } from "@/assets/icons";
 import { StudentProfileLink } from "./StudentProfileLink";
 import { TopChannelsSkeleton } from "./skeleton";
 
@@ -22,6 +23,19 @@ type Props = {
   enrollmentData?: EnrollmentRecord[] | null;
 };
 
+type SortKey =
+  | "name"
+  | "department"
+  | "program"
+  | "course"
+  | "teacher"
+  | "classesHeld"
+  | "attendance"
+  | "gpa"
+  | "intervention";
+
+type SortDirection = "asc" | "desc";
+
 export function TopChannelsTableClient({
   className,
   returnToUrl = "/",
@@ -30,6 +44,9 @@ export function TopChannelsTableClient({
   const [enrollments, setEnrollments] = useState<EnrollmentRecord[]>([]);
   const [isLoading, setIsLoading] = useState(!enrollmentDataProp);
   const [error, setError] = useState<Error | null>(null);
+  const [sortConfig, setSortConfig] = useState<
+    { key: SortKey; direction: SortDirection } | null
+  >(null);
 
   const hasPropData = enrollmentDataProp != null && Array.isArray(enrollmentDataProp);
   const displayEnrollments = hasPropData ? enrollmentDataProp : enrollments;
@@ -45,6 +62,98 @@ export function TopChannelsTableClient({
     }
     return map;
   }, [monitoringData]);
+
+  const handleSort = (key: SortKey) => {
+    setSortConfig((current) => {
+      if (current?.key === key) {
+        return {
+          key,
+          direction: current.direction === "asc" ? "desc" : "asc",
+        };
+      }
+      return { key, direction: "asc" };
+    });
+  };
+
+  const sortedEnrollments = useMemo(() => {
+    const rows = [...displayEnrollments];
+    if (!sortConfig) return rows;
+
+    const { key, direction } = sortConfig;
+    const factor = direction === "asc" ? 1 : -1;
+
+    return rows.sort((a, b) => {
+      const getString = (value: unknown) =>
+        typeof value === "string" ? value.toLowerCase() : (value ?? "").toString().toLowerCase();
+      const getNumber = (value: unknown) =>
+        typeof value === "number" ? value : value == null ? 0 : Number(value) || 0;
+
+      switch (key) {
+        case "name": {
+          const aName = getString(a.Name);
+          const bName = getString(b.Name);
+          if (aName === bName) {
+            return a.SapNo.localeCompare(b.SapNo) * factor;
+          }
+          return aName.localeCompare(bName) * factor;
+        }
+        case "department": {
+          const aDept = getString(a.DeptName);
+          const bDept = getString(b.DeptName);
+          return aDept.localeCompare(bDept) * factor;
+        }
+        case "program": {
+          const aProgram = getString(a.DegreeTitle ?? a.DegreeCode);
+          const bProgram = getString(b.DegreeTitle ?? b.DegreeCode);
+          return aProgram.localeCompare(bProgram) * factor;
+        }
+        case "course": {
+          const aCourse = getString(`${a.CrCode ?? ""} ${a.CrTitle ?? ""}`);
+          const bCourse = getString(`${b.CrCode ?? ""} ${b.CrTitle ?? ""}`);
+          return aCourse.localeCompare(bCourse) * factor;
+        }
+        case "teacher": {
+          const aTeacher = getString(a.Teacher);
+          const bTeacher = getString(b.Teacher);
+          return aTeacher.localeCompare(bTeacher) * factor;
+        }
+        case "classesHeld": {
+          const aKey = `${a.CrCode ?? ""}__${a.Section ?? ""}`;
+          const bKey = `${b.CrCode ?? ""}__${b.Section ?? ""}`;
+          const aVal = getNumber(monitoredByCourseSection.get(aKey));
+          const bVal = getNumber(monitoredByCourseSection.get(bKey));
+          return (aVal - bVal) * factor;
+        }
+        case "attendance":
+        case "gpa":
+        case "intervention":
+        default:
+          return 0;
+      }
+    });
+  }, [displayEnrollments, monitoredByCourseSection, sortConfig]);
+
+  const renderSortIcon = (key: SortKey) => {
+    const isActive = sortConfig?.key === key;
+    const direction = sortConfig?.direction ?? "asc";
+
+    return (
+      <span className="ml-1 inline-flex flex-col justify-center text-[10px] text-dark-6 dark:text-dark-5">
+        <ArrowUpIcon
+          className={cn(
+            "h-2 w-2",
+            isActive && direction === "asc" ? "text-green-500" : "opacity-40"
+          )}
+        />
+        <ArrowDownIcon
+          className={cn(
+            "h-2 w-2 -mt-0.5",
+            isActive && direction === "desc" ? "text-green-500" : "opacity-40"
+          )}
+        />
+      </span>
+    );
+  };
 
   useEffect(() => {
     if (hasPropData) {
@@ -102,6 +211,8 @@ export function TopChannelsTableClient({
     );
   }
 
+  const totalResults = displayEnrollments.length;
+
   return (
     <div
       className={cn(
@@ -115,33 +226,104 @@ export function TopChannelsTableClient({
         </div>
       ) : (
         <div className="mt-4">
+          <div className="mb-3 flex items-center justify-between text-sm text-dark-6 dark:text-dark-5">
+            <span className="font-medium">
+              Total results:{" "}
+              <span className="font-semibold text-dark dark:text-white">
+                {totalResults.toLocaleString()}
+              </span>
+            </span>
+          </div>
+
           <Table>
             <TableHeader className="sticky top-0 z-10 border-b border-stroke bg-white dark:bg-gray-dark dark:border-dark-3 [&>tr]:border-stroke dark:[&>tr]:border-dark-3">
               <TableRow className="border-none uppercase [&>th]:text-center [&>th]:bg-white [&>th]:dark:bg-gray-dark">
-                <TableHead className="min-w-[160px] !text-left">
-                  Name - SAPID
+                <TableHead
+                  className="min-w-[160px] !text-left cursor-pointer select-none"
+                  onClick={() => handleSort("name")}
+                >
+                  <div className="flex items-center gap-1">
+                    <span>Name - SAPID</span>
+                    {renderSortIcon("name")}
+                  </div>
                 </TableHead>
-               
-                <TableHead className="min-w-[140px] !text-left">
-                  Department
+
+                <TableHead
+                  className="min-w-[140px] !text-left cursor-pointer select-none"
+                  onClick={() => handleSort("department")}
+                >
+                  <div className="flex items-center gap-1">
+                    <span>Department</span>
+                    {renderSortIcon("department")}
+                  </div>
                 </TableHead>
-                <TableHead className="min-w-[120px] !text-left">
-                  Program
+                <TableHead
+                  className="min-w-[120px] !text-left cursor-pointer select-none"
+                  onClick={() => handleSort("program")}
+                >
+                  <div className="flex items-center gap-1">
+                    <span>Program</span>
+                    {renderSortIcon("program")}
+                  </div>
                 </TableHead>
-                <TableHead className="min-w-[160px] !text-left">
-                  Course
+                <TableHead
+                  className="min-w-[160px] !text-left cursor-pointer select-none"
+                  onClick={() => handleSort("course")}
+                >
+                  <div className="flex items-center gap-1">
+                    <span>Course</span>
+                    {renderSortIcon("course")}
+                  </div>
                 </TableHead>
-                <TableHead className="min-w-[160px] !text-left">
-                  Instructor Name
+                <TableHead
+                  className="min-w-[160px] !text-left cursor-pointer select-none"
+                  onClick={() => handleSort("teacher")}
+                >
+                  <div className="flex items-center gap-1">
+                    <span>Instructor Name</span>
+                    {renderSortIcon("teacher")}
+                  </div>
                 </TableHead>
-                <TableHead className="min-w-[140px] !text-left">
-                  Classes Monitored
+                <TableHead
+                  className="min-w-[140px] !text-left cursor-pointer select-none"
+                  onClick={() => handleSort("classesHeld")}
+                >
+                  <div className="flex items-center gap-1">
+                    <span>Classes Held</span>
+                    {renderSortIcon("classesHeld")}
+                  </div>
                 </TableHead>
-               
+                <TableHead
+                  className="min-w-[140px] !text-left cursor-pointer select-none"
+                  onClick={() => handleSort("attendance")}
+                >
+                  <div className="flex items-center gap-1">
+                    <span>Attendance %</span>
+                    {renderSortIcon("attendance")}
+                  </div>
+                </TableHead>
+                <TableHead
+                  className="min-w-[140px] !text-left cursor-pointer select-none"
+                  onClick={() => handleSort("gpa")}
+                >
+                  <div className="flex items-center gap-1">
+                    <span>GPA</span>
+                    {renderSortIcon("gpa")}
+                  </div>
+                </TableHead>
+                <TableHead
+                  className="min-w-[140px] !text-left cursor-pointer select-none"
+                  onClick={() => handleSort("intervention")}
+                >
+                  <div className="flex items-center gap-1">
+                    <span>Intervention Status</span>
+                    {renderSortIcon("intervention")}
+                  </div>
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {displayEnrollments.map((row) => {
+              {sortedEnrollments.map((row) => {
                 const courseKey = row.CrCode ?? row.CrTitle ?? "";
                 const totalForCourse = courseIdToStudentCount.get(courseKey) ?? 0;
                 const rowKey = row.Id ?? `${row.SapNo}-${courseKey}-${row.CrTitle}-${row.Name}`;
@@ -177,7 +359,7 @@ export function TopChannelsTableClient({
                     </TableCell>
                     <TableCell className="!text-left">
                       <div className="flex flex-col gap-1">
-                        <span>{row.CrTitle ?? row.CrCode ?? "—"}</span>
+                        <span>{row.CrCode}-{row.CrTitle ?? row.CrCode ?? "—"}</span>
                         <span className="text-sm text-[#1f4a3d]">
                           {totalForCourse} students
                         </span>
@@ -189,6 +371,13 @@ export function TopChannelsTableClient({
                     <TableCell className="!text-left">
                       {monitoredCount != null ? monitoredCount : "—"}
                     </TableCell>
+                    <TableCell className="!text-left">
+                     -
+                    </TableCell>
+                    <TableCell className="!text-left">
+                      -
+                    </TableCell>
+                    <TableCell className="!text-left">-</TableCell>
                   </TableRow>
                 );
               })}

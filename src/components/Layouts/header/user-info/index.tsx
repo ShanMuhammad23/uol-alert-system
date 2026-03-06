@@ -22,7 +22,7 @@ export function UserInfo({ user }: UserInfoProps) {
 
   const displayName = user?.name ?? "Guest";
   const displayEmail = user?.email ?? "";
-  const img = '/images/user/user-placeholder.jpg';
+  const img = user?.picture ?? '/images/user/user-placeholder.jpg';
   const isSignedIn = !!user;
 
   return (
@@ -32,7 +32,7 @@ export function UserInfo({ user }: UserInfoProps) {
 
         <figure className="flex items-center gap-3">
           <Image
-            src='/images/user/user-placeholder.jpg'
+            src={img}
             className="size-12 rounded-full"
             alt={`Avatar of ${displayName}`}
             role="presentation"

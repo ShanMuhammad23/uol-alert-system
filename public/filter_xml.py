@@ -1,12 +1,9 @@
 import lxml.etree as ET
 import os
-
-# Settings
 INPUT_FILE = 'Enrollment_data.xml'
 OUTPUT_FILE = 'Filtered_Enrollment_data.xml'
 TARGET_FAC_ID = '50000172'
 
-# XML Namespaces (Required for OData/SAP XML)
 NAMESPACES = {
     'atom': 'http://www.w3.org/2005/Atom',
     'd': 'http://schemas.microsoft.com/ado/2007/08/dataservices',
@@ -19,9 +16,6 @@ def run_filter():
         return
 
     print("Starting processing... this may take a few minutes for 500k rows.")
-    
-    # Use iterparse to stream the file instead of loading into RAM
-    # We look for the 'entry' tag in the Atom namespace
     context = ET.iterparse(INPUT_FILE, events=('end',), tag='{http://www.w3.org/2005/Atom}entry')
     
     with open(OUTPUT_FILE, 'wb') as f:
@@ -33,9 +27,7 @@ def run_filter():
         
         for event, elem in context:
             count += 1
-            
-            # Find the FacId inside the nested structure
-            # Path: entry -> content -> properties -> FacId
+          
             fac_id = elem.find('.//d:FacId', namespaces=NAMESPACES)
             
             if fac_id is not None and fac_id.text == TARGET_FAC_ID:
@@ -43,7 +35,6 @@ def run_filter():
                 f.write(ET.tostring(elem, encoding='utf-8'))
                 kept += 1
             
-            # Critical: Clear memory to prevent Windows from freezing
             elem.clear()
             while elem.getprevious() is not None:
                 del elem.getparent()[0]

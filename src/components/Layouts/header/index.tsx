@@ -11,9 +11,10 @@ import type { AppUser } from "@/app/(home)/fetch";
 type HeaderProps = {
   user?: AppUser | null;
   screenHeading?: string | null;
+  totalStudents?: number;
 };
 
-export function Header({ user, screenHeading }: HeaderProps) {
+export function Header({ user, screenHeading, totalStudents }: HeaderProps) {
   const { toggleSidebar, isMobile } = useSidebarContext();
 
   return (
@@ -43,9 +44,17 @@ export function Header({ user, screenHeading }: HeaderProps) {
           Student Early Alert System
         </h1>
         {screenHeading && (
-          <p className="text-lg font-medium text-green-600 dark:text-dark-5">
-            {screenHeading}
-          </p>
+          <div className="space-y-0.5">
+            <p className="text-lg font-medium text-green-600 dark:text-dark-5">
+              {screenHeading} {user?.role === "dean" && typeof totalStudents === "number" && (
+                <span className="font-semibold  dark:text-white">
+                  {totalStudents.toLocaleString()}
+                </span>
+            
+            )}
+            </p>
+            
+          </div>
         )}
       </div>
 

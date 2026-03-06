@@ -11,7 +11,12 @@ import type { Metadata } from "next";
 import NextTopLoader from "nextjs-toploader";
 import type { PropsWithChildren } from "react";
 import { Providers } from "./providers";
-import { getCurrentUser, getFullData, getScreenHeading } from "./(home)/fetch";
+import {
+  getCurrentUser,
+  getFullData,
+  getScreenHeading,
+  getOverviewData,
+} from "./(home)/fetch";
 
 export const metadata: Metadata = {
   title: {
@@ -23,8 +28,10 @@ export const metadata: Metadata = {
 };
 
 export default async function RootLayout({ children }: PropsWithChildren) {
-  const [user, data] = await Promise.all([getCurrentUser(), getFullData()]);
+  const user = await getCurrentUser();
+  const data = await getFullData();
   const screenHeading = getScreenHeading(user, data);
+  const overview = await getOverviewData(user ?? undefined);
 
   return (
     <html lang="en" suppressHydrationWarning>
@@ -36,7 +43,11 @@ export default async function RootLayout({ children }: PropsWithChildren) {
 
 
             <div className="w-full bg-gray-2 dark:bg-[#020d1a]">
-              <Header user={user} screenHeading={screenHeading} />
+              <Header
+                user={user}
+                screenHeading={screenHeading}
+                totalStudents={overview.totalStudents}
+              />
 
               <main className=" mx-auto w-full  overflow-hidden px-8 ">
                 {children}
