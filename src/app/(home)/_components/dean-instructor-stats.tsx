@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import type { InstructorStats, DeanStatsUser } from "@/lib/enrollment";
 import { cn } from "@/lib/utils";
 
@@ -10,22 +9,16 @@ type PropsType = {
   selectedInstructorId?: string;
   /** Stats from enrollment or server; when empty, nothing is rendered. */
   stats?: InstructorStats[] | null;
+  /** Optional callback to update filters client-side instead of navigating. */
+  onSelectInstructorId?: (instructorId: string) => void;
 };
-
-function buildInstructorUrl(
-  instructorId: string,
-  selectedDepartmentId?: string
-): string {
-  const params = new URLSearchParams({ selected_alert: "all", instructor: instructorId });
-  if (selectedDepartmentId) params.set("department", selectedDepartmentId);
-  return `/?${params.toString()}`;
-}
 
 export function DeanInstructorStats({
   user,
   selectedDepartmentId,
   selectedInstructorId,
   stats = null,
+  onSelectInstructorId,
 }: PropsType) {
   if (!user || user.role !== "dean") return null;
 
@@ -35,9 +28,10 @@ export function DeanInstructorStats({
   return (
     <div className="max-h-[240px] overflow-y-auto custom-scrollbar flex flex-wrap gap-2">
       {list.map((i) => (
-        <Link
+        <button
           key={i.instructorId}
-          href={buildInstructorUrl(i.instructorId, selectedDepartmentId)}
+          type="button"
+          onClick={() => onSelectInstructorId?.(i.instructorId)}
           className={cn(
             "inline-flex bg-white flex-col rounded-lg border border-stroke px-4 py-3 shadow-1 dark:bg-gray-dark transition hover:border-primary/50 hover:shadow dark:border-stroke-dark dark:hover:border-primary/50",
             "min-w-[160px]"
@@ -66,7 +60,7 @@ export function DeanInstructorStats({
               {i.redGpa}
             </span>
           </span>
-        </Link>
+        </button>
       ))}
     </div>
   );

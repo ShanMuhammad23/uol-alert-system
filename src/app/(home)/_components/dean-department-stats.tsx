@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import type { DepartmentStats, DeanStatsUser } from "@/lib/enrollment";
 import { cn } from "@/lib/utils";
 
@@ -11,17 +10,16 @@ type PropsType = {
   masterFilterDepartmentIds?: string[];
   /** Stats from enrollment or server; when empty, nothing is rendered. */
   stats?: DepartmentStats[] | null;
+  /** Optional callback to update filters client-side instead of navigating. */
+  onSelectDepartmentId?: (departmentId: string) => void;
 };
-
-function buildDepartmentUrl(departmentId: string): string {
-  return `/?selected_alert=all&department=${encodeURIComponent(departmentId)}`;
-}
 
 export function DeanDepartmentStats({
   user,
   selectedDepartmentId,
   masterFilterDepartmentIds,
   stats = null,
+  onSelectDepartmentId,
 }: PropsType) {
   if (!user || user.role !== "dean") return null;
 
@@ -36,9 +34,10 @@ export function DeanDepartmentStats({
             ? masterFilterDepartmentIds.includes(d.departmentId)
             : selectedDepartmentId === d.departmentId);
         return (
-          <Link
+          <button
             key={d.departmentId}
-            href={buildDepartmentUrl(d.departmentId)}
+            type="button"
+            onClick={() => onSelectDepartmentId?.(d.departmentId)}
             className={cn(
               "inline-flex bg-white flex-col rounded-lg border px-4 py-3 shadow-1 dark:bg-gray-dark transition hover:border-primary/50 hover:shadow dark:border-stroke-dark dark:hover:border-primary/50",
               "min-w-[160px]",
@@ -70,7 +69,7 @@ export function DeanDepartmentStats({
                 {d.redGpa}
               </span>
             </span>
-          </Link>
+          </button>
         );
       })}
     </div>

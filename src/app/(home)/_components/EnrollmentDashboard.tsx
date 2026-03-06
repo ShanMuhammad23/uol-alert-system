@@ -139,6 +139,14 @@ export function EnrollmentDashboard({
                         : undefined
                   }
                   stats={departmentStats}
+                  onSelectDepartmentId={(id) =>
+                    setLocalMasterFilter({
+                      department_ids: [id],
+                      programs: undefined,
+                      course_ids: undefined,
+                      instructor_ids: undefined,
+                    })
+                  }
                 />
               }
               programContent={
@@ -162,6 +170,14 @@ export function EnrollmentDashboard({
                         : undefined
                   }
                   stats={programStats}
+                  onSelectProgramId={(id) =>
+                    setLocalMasterFilter((prev) => ({
+                      ...prev,
+                      programs: [id],
+                      course_ids: undefined,
+                      instructor_ids: undefined,
+                    }))
+                  }
                 />
               }
               instructorContent={
@@ -174,6 +190,12 @@ export function EnrollmentDashboard({
                     localMasterFilter.instructor_ids?.[0] ?? instructorIds[0]
                   }
                   stats={instructorStats}
+                  onSelectInstructorId={(id) =>
+                    setLocalMasterFilter((prev) => ({
+                      ...prev,
+                      instructor_ids: [id],
+                    }))
+                  }
                 />
               }
             />

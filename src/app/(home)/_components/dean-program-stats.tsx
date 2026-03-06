@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import type { ProgramStats, DeanStatsUser } from "@/lib/enrollment";
 import { cn } from "@/lib/utils";
 
@@ -11,13 +10,9 @@ type PropsType = {
   masterFilterDepartmentIds?: string[];
   /** Stats from enrollment or server; when empty, nothing is rendered. */
   stats?: ProgramStats[] | null;
+  /** Optional callback to update filters client-side instead of navigating. */
+  onSelectProgramId?: (programId: string) => void;
 };
-
-function buildProgramUrl(programId: string, departmentIds: string[]): string {
-  const params = new URLSearchParams({ selected_alert: "all", program: programId });
-  if (departmentIds.length) params.set("department", departmentIds.join(","));
-  return `/?${params.toString()}`;
-}
 
 export function DeanProgramStats({
   user,
@@ -25,6 +20,7 @@ export function DeanProgramStats({
   masterFilterProgramIds,
   masterFilterDepartmentIds,
   stats = null,
+  onSelectProgramId,
 }: PropsType) {
   if (!user || user.role !== "dean") return null;
 
@@ -41,9 +37,10 @@ export function DeanProgramStats({
             ? masterFilterProgramIds.includes(p.programId)
             : selectedProgramId === p.programId);
         return (
-          <Link
+          <button
             key={p.programId}
-            href={buildProgramUrl(p.programId, effectiveDepartmentIds)}
+            type="button"
+            onClick={() => onSelectProgramId?.(p.programId)}
             className={cn(
               "inline-flex bg-white flex-col rounded-lg border px-4 py-3 shadow-1 dark:bg-gray-dark transition hover:border-primary/50 hover:shadow dark:border-stroke-dark dark:hover:border-primary/50",
               "min-w-[160px]",
@@ -75,7 +72,7 @@ export function DeanProgramStats({
                 {p.redGpa}
               </span>
             </span>
-          </Link>
+          </button>
         );
       })}
     </div>
